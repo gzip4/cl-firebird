@@ -317,7 +317,7 @@
   (check-trans-handle *transaction*)
   (let ((stmt (etypecase query
 		(statement query)
-		(string (statement-prepare (make-statement) query)))))
+		(string (statement-prepare (make-statement *transaction*) query)))))
     (statement-execute-list stmt params)))
     
 
@@ -325,7 +325,7 @@
   (check-trans-handle *transaction*)
   (let ((stmt (etypecase query
 		(statement query)
-		(string (statement-prepare (make-statement) query)))))
+		(string (statement-prepare (make-statement *transaction*) query)))))
     (loop :for p :in params :do (statement-execute-list stmt p))
     (values stmt)))
 
@@ -334,7 +334,7 @@
   (check-trans-handle *transaction*)
   (let* ((p? (make-list (length params) :initial-element #\?))
 	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
-	 (stmt (statement-prepare (make-statement) sql)))
+	 (stmt (statement-prepare (make-statement *transaction*) sql)))
     (unwind-protect
 	 (progn
 	   (statement-execute-list stmt params)
