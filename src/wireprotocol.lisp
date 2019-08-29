@@ -125,7 +125,11 @@
 	       specific-data (long-to-hex A$))))
       ((member auth-plugin '(:Legacy-Auth :legacy))
        (setf auth-plugin "legacy_auth")
-       (setf specific-data (subseq (crypt:crypt (slot-value wp 'password) "9z") 2)))
+       (setf specific-data
+	     (subseq
+	      (crypt:crypt (slot-value wp 'password)
+			   +legacy-password-salt+)
+	      2)))
       (t (error 'operational-error
 		:msg (format nil "Unknown auth plugin name '~a'" auth-plugin))))
     
@@ -378,7 +382,9 @@
 	((string= "Legacy_Auth" accept-plugin-name)
 	 ;; XXX: never be here, maybe unneeded
 	 (setf (slot-value wp 'auth-data)
-	       (subseq (crypt:crypt (slot-value wp 'password) "9z") 2)))
+	       (subseq (crypt:crypt (slot-value wp 'password)
+				    +legacy-password-salt+)
+		       2)))
 	(t
 	 (error 'operational-error
 		:msg (format nil "Unknown auth plugin: ~a" accept-plugin-name))))))
@@ -438,7 +444,11 @@
       (if (= (protocol-accept-version wp) +protocol-version10+)
 	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
 	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes (subseq (crypt:crypt (slot-value wp 'password) "9z") 2))))
+	  (let ((pwd (str-to-bytes
+		      (subseq
+		       (crypt:crypt (slot-value wp 'password)
+				    +legacy-password-salt+)
+		       2))))
 	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
     (when (slot-value wp 'role)
       (let ((rn (str-to-bytes (slot-value wp 'role))))
@@ -497,7 +507,11 @@
       (if (= (protocol-accept-version wp) +protocol-version10+)
 	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
 	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes (subseq (crypt:crypt (slot-value wp 'password) "9z") 2))))
+	  (let ((pwd (str-to-bytes
+		      (subseq
+		       (crypt:crypt (slot-value wp 'password)
+				    +legacy-password-salt+)
+		       2))))
 	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
     (when (slot-value wp 'role)
       (let ((rn (str-to-bytes (slot-value wp 'role))))

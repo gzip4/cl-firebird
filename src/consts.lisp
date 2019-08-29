@@ -22,6 +22,7 @@
 
 
 (defparameter +default-charset+ "UTF8")
+(defparameter +legacy-password-salt+ "9z")
 
 (defconstant +isc-time-seconds-precision+ 10000)
 (defconstant +max-char-length+ 32767)
