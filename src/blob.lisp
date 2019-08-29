@@ -30,8 +30,8 @@
     (values (byte-stream-output val))))
 
 
-(defun blob-value (blob)
-  (let* ((trans *transaction*)
+(defun blob-value (blob &optional trans)
+  (let* ((trans (or trans *transaction*))
 	 (conn (connection trans))
 	 (trans-handle (object-handle trans)))
     (with-slots (data blob-id trans subtype) blob
