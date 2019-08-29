@@ -1,6 +1,8 @@
 
 (in-package #:cl-firebird)
 
+(defgeneric connection (object))
+
 
 (defclass wire-protocol ()
   ((user)
@@ -58,14 +60,14 @@
 
 (defclass transaction ()
   ((connection :initarg :conn :reader connection)
-   (handle :initform nil :reader transaction-handle :reader object-handle)
+   (handle :initform nil :reader object-handle)
    (auto-commit :initform nil :reader auto-commit-p :initarg :auto-commit)
    (dirty :initform nil :reader transaction-dirty-p)))
 
 
 (defclass statement ()
   ((trans :initarg :trans :reader transaction)
-   (handle :initform -1 :reader statement-handle :reader object-handle)
+   (handle :initform -1 :reader object-handle)
    (open :initform nil :reader statement-open-p)
    (stmt-type :initform nil :reader statement-type)
    (plan :initform nil :reader statement-plan)

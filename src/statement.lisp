@@ -24,8 +24,12 @@
   (make-instance 'statement :trans transaction))
 
 
+(defmethod connection ((object statement))
+  (connection (transaction object)))
+
+
 (defun statement-allocate (stmt)
-  (let ((conn (connection (transaction stmt))))
+  (let ((conn (connection stmt)))
     (with-slots (accept-type lazy-response-count) conn
       (wp-op-allocate-statement conn)
       (if (= accept-type +ptype-lazy-send+)
@@ -50,9 +54,9 @@
 
 
 (defun statement-prepare (stmt sql &key explain-plan)
-  (let ((conn (connection (transaction stmt)))
+  (let ((conn (connection stmt))
 	(handle (slot-value stmt 'handle))
-	(trans-handle (transaction-handle (transaction stmt))))
+	(trans-handle (object-handle (transaction stmt))))
     (setf (slot-value stmt 'plan) nil)
     (wp-op-prepare-statement conn handle trans-handle sql (if explain-plan +isc-info-sql-get-plan+))
 
@@ -86,9 +90,9 @@
 
 
 (defun %statement-execute-proc (stmt params)
-  (wp-op-execute2 (connection (transaction stmt))
+  (wp-op-execute2 (connection stmt)
 		  (object-handle stmt)
-		  (transaction-handle (transaction stmt))
+		  (object-handle (transaction stmt))
 		  (%statement-convert-params params)
 		  (xsqlvar-calc-blr (statement-xsqlda stmt)))
   (setf (slot-value stmt 'result)
@@ -97,9 +101,9 @@
 
 
 (defun %statement-execute-other (stmt params)
-  (wp-op-execute (connection (transaction stmt))
+  (wp-op-execute (connection stmt)
 		 (object-handle stmt)
-		 (transaction-handle (transaction stmt))
+		 (object-handle (transaction stmt))
 		 (%statement-convert-params params)))
 
 
@@ -109,7 +113,7 @@
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))
   (handler-case
-      (wp-op-response (connection (transaction stmt)))
+      (wp-op-response (connection stmt))
     (warning (w)
       (setf (slot-value stmt 'open) nil)
       (warn w)))
@@ -124,7 +128,7 @@
 (defun statement-make-fetcher (stmt &optional plist)
   (let* ((xsqlda (statement-xsqlda stmt))
 	 (handle (object-handle stmt))
-	 (conn (connection (transaction stmt)))
+	 (conn (connection stmt))
 	 (blr (xsqlvar-calc-blr xsqlda))
 	 rows (more-data t))
     (lambda ()
@@ -144,7 +148,7 @@
 (defun statement-fetch-one (stmt &optional plist)
   (let* ((xsqlda (statement-xsqlda stmt))
 	 (handle (object-handle stmt))
-	 (conn (connection (transaction stmt)))
+	 (conn (connection stmt))
 	 (blr (xsqlvar-calc-blr (statement-xsqlda stmt))))
     (wp-op-fetch conn handle blr 1)
     (multiple-value-bind (rows)
@@ -161,7 +165,7 @@
 (defun statement-fetch-all (stmt &optional plist)
   (let* ((xsqlda (statement-xsqlda stmt))
 	 (handle (object-handle stmt))
-	 (conn (connection (transaction stmt)))
+	 (conn (connection stmt))
 	 (blr (xsqlvar-calc-blr xsqlda))
 	 result)
     (loop
@@ -179,7 +183,7 @@
 
 (defun statement-row-count (stmt)
   (log:debug stmt)
-  (let ((conn (connection (transaction stmt))))
+  (let ((conn (connection stmt)))
     (wp-op-info-sql conn (object-handle stmt) (make-bytes +isc-info-sql-records+))
     (multiple-value-bind (h oid buf)
 	(wp-op-response conn)
@@ -197,7 +201,7 @@
 
 (defun statement-close (stmt)
   (log:debug stmt)
-  (let ((conn (connection (transaction stmt))))
+  (let ((conn (connection stmt)))
     (when (and (statement-type stmt)
 	       (= (statement-type stmt) +isc-info-sql-stmt-select+)
 	       (statement-open-p stmt))
@@ -212,7 +216,7 @@
 
 (defun statement-drop (stmt)
   (log:debug stmt)
-  (let ((conn (connection (transaction stmt))))
+  (let ((conn (connection stmt)))
     (when (and (object-handle stmt) (/= (object-handle stmt) -1))
       (wp-op-free-statement conn (object-handle stmt) +dsql-drop+)
       (with-slots (accept-type lazy-response-count) conn
