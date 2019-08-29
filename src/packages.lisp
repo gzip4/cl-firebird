@@ -11,7 +11,6 @@
 	   #:disconnected-p
 	   #:db-info
 	   #:drop-database
-	   #:with-connection
 	   #:prepare
 	   #:execute
 	   #:execute-many
@@ -25,23 +24,23 @@
 	   #:db-info*
 	   #:drop-database*
 	   #:with-transaction*
-
 	   #:begin
-	   #:savepoint
 	   #:commit
-	   #:commit-retaining
-	   #:rollback-savepoint
 	   #:rollback
-	   #:rollback-retaining
+	   #:savepoint
+	   #:rollback-to-savepoint
 	   #:transaction-info
 	   #:make-transaction
-	   #:execute-immediate
+	   #:immediate
+	   #:with-connection
 	   #:with-transaction
 	   #:with-transaction/ac
-
-	   #:statement-row-count
 	   #:with-statement
-	   #:blob-value))
+	   #:row-count
+	   #:blob-value
+	   #:*connection*
+	   #:*transaction*
+	   #:*statement*))
 
 (in-package #:cl-user)
 

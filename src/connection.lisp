@@ -255,10 +255,63 @@
 	 (disconnect ,conn!)))))
 
 
+(defun immediate (sql &optional trans)
+  (execute-immediate sql (or trans *transaction*)))
+
+
+(defmacro with-transaction ((&optional conn var) &body body)
+  (let* ((conn! (gensym "CONNECTION"))
+	 (tr! (gensym "TRANSACTION"))
+	 (var! (when var (list (list var tr!))))
+	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
+    `(let* ((,conn! (or ,conn *connection*))
+	    (,tr! (make-transaction ,conn! :auto-commit nil))
+	    (*transaction* ,tr!)
+	    ,@var!)
+       ,var-decl!
+       (unwind-protect
+            (multiple-value-prog1
+		(progn ,@body)
+	      (transaction-commit ,tr!))
+	 (transaction-rollback ,tr!)))))
+
+
+(defmacro with-transaction/ac ((&optional conn var) &body body)
+  (let* ((conn! (gensym "CONNECTION"))
+	 (tr! (gensym "TRANSACTION"))
+	 (err! (gensym "ERROR"))
+	 (var! (when var (list (list var tr!))))
+	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
+    `(let* ((,conn! (or ,conn *connection*))
+	    (,tr! (make-transaction ,conn! :auto-commit t))
+	    (*transaction* ,tr!)
+	    ,@var!)
+       ,var-decl!
+       (unwind-protect
+            (multiple-value-prog1
+		(progn ,@body)
+	      (transaction-commit ,tr!))
+	 (transaction-rollback ,tr!)))))
+
+
 (defun prepare (sql &key explain-plan)
   (check-trans-handle *transaction*)
   (statement-prepare (make-statement *transaction*)
 		     sql :explain-plan explain-plan))
+
+
+(defmacro with-statement ((var sql &key explain-plan) &body body)
+  (let ((tmp (gensym))
+	(stmt (gensym "STATEMENT")))
+    `(let* ((,tmp ,sql)
+	    (,stmt (etypecase ,tmp
+		     (statement ,tmp)
+		     (string (prepare ,tmp :explain-plan ,explain-plan))))
+	    (,var ,stmt)
+	    (*statement* ,stmt))
+       (declare (ignorable ,var))
+       (unwind-protect (progn ,@body)
+	 (statement-drop ,stmt)))))
 
 
 (defun execute (query &rest params)
@@ -290,7 +343,8 @@
       (statement-close stmt))))
 
 
-(defun fetch (stmt &optional (result :fetch-all))
+(defun fetch (&optional stmt (result :fetch-all))
+  (setf stmt (or stmt *statement*))
   (let ((need-close t))
     (unwind-protect
 	 (when (statement-open-p stmt)
@@ -313,39 +367,77 @@
 	(statement-close stmt)))))
   
 
-(defun fetch1 (stmt)
+(defun fetch1 (&optional stmt)
   (fetch stmt :one))
   
 
-(defun fetch! (stmt)
+(defun fetch! (&optional stmt)
   (fetch stmt :single))
   
+
+(defun begin (&optional trans)
+  (transaction-start (or trans *transaction*)))
+
+
+(defun commit (&optional trans)
+  (transaction-commit (or trans *transaction*)))
+
+
+(defun rollback (&optional trans)
+  (transaction-rollback (or trans *transaction*)))
+
+
+(defun savepoint (name &optional trans)
+  (transaction-savepoint (or trans *transaction*) name))
+
+
+(defun rollback-to-savepoint (name &optional trans)
+  (transaction-rollback-to-savepoint (or trans *transaction*) name))
+
+
+(defun row-count (&optional stmt)
+  (statement-row-count (or stmt *statement*)))
+
 
 
 ;; == TOPLEVEL ==
 
-(defun connect* (&rest args &key &allow-other-keys)
-  (if *connection*
-      (error "Already connected: ~a" *connection*)
-      (setf *connection* (apply #'connect args)))
-  (values))
-
 (defun disconnect* ()
   (when *connection*
+    (when *transaction* (rollback *transaction*))
     (ignore-errors (disconnect *connection*))
-    (setf *connection* nil))
+    (setf *connection* nil *transaction* nil))
   (values))
+
+
+(defun connect* (&rest args &key &allow-other-keys)
+  (when *connection*
+    (restart-case
+	(error "Already connected: ~a" *connection*)
+      (restart-cancel ()
+	:report "Cancel connection."
+	(return-from connect* (values)))
+      (restart-force ()
+	:report "Force connect to database (disconnect previous)."
+	(disconnect*))))
+  (setf *connection* (apply #'connect args))
+  (setf *transaction* (make-transaction *connection* :auto-commit t))
+  (values))
+
 
 (defun disconnected-p* ()
   (if *connection*
       (not (slot-value *connection* 'socket))
       t))
 
+
 (defun db-info* (info-requests)
   (db-info *connection* info-requests))
 
+
 (defun drop-database* ()
   (drop-database *connection*))
+
 
 (defmacro with-transaction* ((&optional var) &body body)
   `(with-transaction (*connection* ,var) ,@body))

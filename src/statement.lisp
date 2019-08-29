@@ -20,8 +20,7 @@
    +isc-info-sql-stmt-savepoint+ :savepoint))
 
 
-(defun make-statement (&optional transaction)
-  (unless transaction (setf transaction *transaction*))
+(defun make-statement (transaction)
   (make-instance 'statement :trans transaction))
 
 
@@ -223,16 +222,3 @@
   (setf (slot-value stmt 'open) nil
 	(slot-value stmt 'handle) -1)
   (values stmt))
-
-
-(defmacro with-statement ((var sql &key explain-plan) &body body)
-  (let ((tmp (gensym))
-	(stmt (gensym "STATEMENT")))
-    `(let* ((,tmp ,sql)
-	    (,stmt (etypecase ,tmp
-		     (statement ,tmp)
-		     (string (prepare ,tmp :explain-plan ,explain-plan))))
-	    (,var ,stmt))
-       (declare (ignorable ,var))
-       (unwind-protect (progn ,@body)
-	 (statement-drop ,stmt)))))

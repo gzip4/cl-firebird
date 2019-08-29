@@ -27,8 +27,7 @@
       (error "Wrong isolation level: ~a" lvl))))
 
 
-(defun begin (&optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-start (trans)
   (let* ((conn (connection trans))
 	 (tpb (%tpb (isolation-level conn))))
     (when (auto-commit-p trans)
@@ -40,8 +39,7 @@
   (values trans))
 
 
-(defun savepoint (name &optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-savepoint (trans name)
   (when (object-handle trans)
     (wp-op-exec-immediate (connection trans)
 			  (object-handle trans)
@@ -50,28 +48,24 @@
   (values))
 
 
-(defun commit (&optional trans)
-  (unless trans (setf trans *transaction*))
-  (when (and (object-handle trans)
-	     #+nil(transaction-dirty-p trans))
-      (wp-op-commit (connection trans) (object-handle trans))
-      (wp-op-response (connection trans))
-      (setf (slot-value trans 'handle) nil)
-      (setf (slot-value trans 'dirty) nil))
-  (values trans))
-
-
-(defun commit-retaining (&optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-commit (trans)
   (when (object-handle trans)
-      (wp-op-commit-retaining (connection trans) (object-handle trans))
-      (wp-op-response (connection trans))
-      (setf (slot-value trans 'dirty) nil))
+    (wp-op-commit (connection trans) (object-handle trans))
+    (wp-op-response (connection trans))
+    (setf (slot-value trans 'handle) nil)
+    (setf (slot-value trans 'dirty) nil))
   (values trans))
 
 
-(defun rollback-savepoint (savepoint &optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-commit-retaining (trans)
+  (when (object-handle trans)
+    (wp-op-commit-retaining (connection trans) (object-handle trans))
+    (wp-op-response (connection trans))
+    (setf (slot-value trans 'dirty) nil))
+  (values trans))
+
+
+(defun transaction-rollback-to-savepoint (trans savepoint)
   (when (object-handle trans)
     (wp-op-exec-immediate (connection trans)
 			  (object-handle trans)
@@ -80,8 +74,7 @@
     (values trans)))
 
 
-(defun rollback (&optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-rollback (trans)
   (when (object-handle trans)
     (wp-op-rollback (connection trans) (object-handle trans))
     (wp-op-response (connection trans))
@@ -90,8 +83,7 @@
   (values trans))
 
 
-(defun rollback-retaining (&optional trans)
-  (unless trans (setf trans *transaction*))
+(defun transaction-rollback-retaining (trans)
   (when (object-handle trans)
     (wp-op-rollback-retaining (connection trans) (object-handle trans))
     (wp-op-response (connection trans))
@@ -99,10 +91,9 @@
   (values trans))
 
 
-(defun check-trans-handle (&optional trans)
-  (unless trans (setf trans *transaction*))
+(defun check-trans-handle (trans)
   (unless (object-handle trans)
-    (begin trans))
+    (transaction-start trans))
   (values))
 
 
@@ -143,7 +134,7 @@
     (values r)))
 
 
-(defun transaction-info (info-requests &optional trans)
+(defun transaction-info (trans info-requests)
   (unless trans (setf trans *transaction*))
   (setf info-requests (check-info-requests info-requests))
   (let ((conn (connection trans)))
@@ -163,7 +154,6 @@
 	(values res)))))
 
 
-
 (defun make-transaction (connection &key auto-commit)
   (let ((trans (make-instance 'transaction :conn connection :auto-commit auto-commit)))
     (check-trans-handle trans)
@@ -175,48 +165,12 @@
      ))
 
 
-(defun execute-immediate (query &optional trans)
-  (unless trans (setf trans *transaction*))
+(defun execute-immediate (query trans)
   (check-trans-handle trans)
   (wp-op-exec-immediate (connection trans)
-			(object-handle trans)
-			query)
+                        (object-handle trans)
+                        query)
   (wp-op-response (connection trans))
   (setf (slot-value trans 'dirty) t)
   (values))
-
-
-(defmacro with-transaction ((&optional conn var) &body body)
-  (let* ((conn! (gensym "CONNECTION"))
-	 (tr! (gensym "TRANSACTION"))
-	 (var! (when var (list (list var tr!))))
-	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
-    `(let* ((,conn! (or ,conn *connection*))
-	    (,tr! (make-transaction ,conn! :auto-commit nil))
-	    (*transaction* ,tr!)
-	    ,@var!)
-       ,var-decl!
-       (unwind-protect
-            (multiple-value-prog1
-		(progn ,@body)
-	      (commit ,tr!))
-	 (ignore-errors (rollback ,tr!))))))
-
-
-(defmacro with-transaction/ac ((&optional conn var) &body body)
-  (let* ((conn! (gensym "CONNECTION"))
-	 (tr! (gensym "TRANSACTION"))
-	 (err! (gensym "ERROR"))
-	 (var! (when var (list (list var tr!))))
-	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
-    `(let* ((,conn! (or ,conn *connection*))
-	    (,tr! (make-transaction ,conn! :auto-commit t))
-	    (*transaction* ,tr!)
-	    ,@var!)
-       ,var-decl!
-       (handler-case
-	   (prog1 (progn ,@body) (commit ,tr!))
-	 (error (,err!)
-	   (ignore-errors (rollback ,tr!))
-	   (error ,err!))))))
 
