@@ -279,7 +279,6 @@
 (defmacro with-transaction/ac ((&optional conn var) &body body)
   (let* ((conn! (gensym "CONNECTION"))
 	 (tr! (gensym "TRANSACTION"))
-	 (err! (gensym "ERROR"))
 	 (var! (when var (list (list var tr!))))
 	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
     `(let* ((,conn! (or ,conn *connection*))
