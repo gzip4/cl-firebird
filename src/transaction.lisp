@@ -6,37 +6,45 @@
 
 (defparameter +transaction-parameter-block+
   (vector
-   (vector ;; ISOLATION-LEVEL-READ-COMMITED-LEGACY
-    +isc-tpb-version3+ +isc-tpb-write+ +isc-tpb-wait+ +isc-tpb-read-committed+ +isc-tpb-no-rec-version+)
-   (vector ;; ISOLATION-LEVEL-READ-COMMITED
-    +isc-tpb-version3+ +isc-tpb-write+ +isc-tpb-wait+ +isc-tpb-read-committed+ +isc-tpb-rec-version+)
-   (vector ;; ISOLATION-LEVEL-REPEATABLE-READ
-    +isc-tpb-version3+ +isc-tpb-write+ +isc-tpb-wait+ +isc-tpb-concurrency+)
-   (vector ;; ISOLATION-LEVEL-SERIALIZABLE
-    +isc-tpb-version3+ +isc-tpb-write+ +isc-tpb-wait+ +isc-tpb-consistency+)
-   (vector ;; ISOLATION-LEVEL-READ-COMMITED-RO
-    +isc-tpb-version3+ +isc-tpb-read+ +isc-tpb-wait+ +isc-tpb-read-committed+ +isc-tpb-rec-version+)))
+   (vector			; ISOLATION-LEVEL-READ-COMMITED-LEGACY
+    +isc-tpb-version3+
+    +isc-tpb-write+
+    +isc-tpb-wait+
+    +isc-tpb-read-committed+
+    +isc-tpb-no-rec-version+)
+   (vector			       ; ISOLATION-LEVEL-READ-COMMITED
+    +isc-tpb-version3+
+    +isc-tpb-write+
+    +isc-tpb-wait+
+    +isc-tpb-read-committed+
+    +isc-tpb-rec-version+)
+   (vector			     ; ISOLATION-LEVEL-REPEATABLE-READ
+    +isc-tpb-version3+
+    +isc-tpb-write+
+    +isc-tpb-wait+
+    +isc-tpb-concurrency+)
+   (vector				; ISOLATION-LEVEL-SERIALIZABLE
+    +isc-tpb-version3+
+    +isc-tpb-write+
+    +isc-tpb-wait+
+    +isc-tpb-consistency+)
+   (vector			    ; ISOLATION-LEVEL-READ-COMMITED-RO
+    +isc-tpb-version3+
+    +isc-tpb-read+
+    +isc-tpb-wait+
+    +isc-tpb-read-committed+
+    +isc-tpb-rec-version+)))
 
 
 (defun %tpb (lvl)
   (handler-case
       (let ((x (svref +transaction-parameter-block+ lvl)))
-	(make-array (length x) :adjustable t :fill-pointer t :initial-contents x))
-    (simple-error (e)
-      (declare (ignore e))
+	(make-array (length x)
+		    :adjustable t
+		    :fill-pointer t
+		    :initial-contents x))
+    (simple-error ()
       (error "Wrong isolation level: ~a" lvl))))
-
-
-(defun transaction-start (trans)
-  (let* ((conn (connection trans))
-	 (tpb (%tpb (isolation-level conn))))
-    (when (auto-commit-p trans)
-      (vector-push-extend +isc-tpb-autocommit+ tpb))
-    (wp-op-transaction conn (coerce tpb '(simple-array (unsigned-byte 8) (*))))
-    (let ((h (wp-op-response conn)))
-      (setf (slot-value trans 'handle) (if (>= h 0) h)
-	    (slot-value trans 'dirty) nil)))
-  (values trans))
 
 
 (defun transaction-savepoint (trans name)
@@ -89,12 +97,6 @@
     (wp-op-response (connection trans))
     (setf (slot-value trans 'dirty) nil))
   (values trans))
-
-
-(defun check-trans-handle (trans)
-  (unless (object-handle trans)
-    (transaction-start trans))
-  (values))
 
 
 (defun check-info-requests (info-requests)
@@ -154,19 +156,13 @@
 	(values res)))))
 
 
-(defun make-transaction (connection &key auto-commit)
-  (let ((trans (make-instance 'transaction :conn connection :auto-commit auto-commit)))
-    (check-trans-handle trans)
-    (values trans)))
-
-
 (defmethod print-object ((object transaction) stream)
   (print-unreadable-object (object stream :type t :identity t)
      ))
 
 
 (defun execute-immediate (query trans)
-  (check-trans-handle trans)
+  ;;(check-trans-handle trans)
   (wp-op-exec-immediate (connection trans)
                         (object-handle trans)
                         query)

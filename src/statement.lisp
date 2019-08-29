@@ -108,7 +108,6 @@
 
 
 (defun statement-execute-list (stmt &optional params)
-  (check-trans-handle (transaction stmt))
   (if (= (statement-type stmt) +isc-info-sql-stmt-exec-procedure+)
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))

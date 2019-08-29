@@ -23,14 +23,12 @@
 	   #:disconnected-p*
 	   #:db-info*
 	   #:drop-database*
-	   #:with-transaction*
-	   #:begin
 	   #:commit
 	   #:rollback
 	   #:savepoint
 	   #:rollback-to-savepoint
 	   #:transaction-info
-	   #:make-transaction
+	   #:start-transaction
 	   #:immediate
 	   #:with-connection
 	   #:with-transaction

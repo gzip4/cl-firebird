@@ -240,6 +240,20 @@
   (values))
 
 
+(defun start-transaction (conn &key auto-commit)
+  (let ((tpb (%tpb (isolation-level conn))))
+    (when auto-commit
+      (vector-push-extend +isc-tpb-autocommit+ tpb))
+    (wp-op-transaction conn (coerce tpb '(simple-array (unsigned-byte 8) (*))))
+    (let ((h (wp-op-response conn))
+	  (trans (make-instance 'transaction
+				:conn conn
+				:auto-commit auto-commit)))
+      (setf (slot-value trans 'handle) (if (>= h 0) h)
+	    (slot-value trans 'dirty) nil)
+      (values trans))))
+
+
 (defmacro with-connection ((var &rest args &key dsn user password role host database &allow-other-keys)
 			   &body body)
   (declare (ignorable dsn user password role host database))
@@ -265,7 +279,7 @@
 	 (var! (when var (list (list var tr!))))
 	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
     `(let* ((,conn! (or ,conn *connection*))
-	    (,tr! (make-transaction ,conn! :auto-commit nil))
+	    (,tr! (start-transaction ,conn! :auto-commit nil))
 	    (*transaction* ,tr!)
 	    ,@var!)
        ,var-decl!
@@ -282,7 +296,7 @@
 	 (var! (when var (list (list var tr!))))
 	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
     `(let* ((,conn! (or ,conn *connection*))
-	    (,tr! (make-transaction ,conn! :auto-commit t))
+	    (,tr! (start-transaction ,conn! :auto-commit t))
 	    (*transaction* ,tr!)
 	    ,@var!)
        ,var-decl!
@@ -294,7 +308,6 @@
 
 
 (defun prepare (sql &key explain-plan)
-  (check-trans-handle *transaction*)
   (statement-prepare (make-statement *transaction*)
 		     sql :explain-plan explain-plan))
 
@@ -314,7 +327,6 @@
 
 
 (defun execute (query &rest params)
-  (check-trans-handle *transaction*)
   (let ((stmt (etypecase query
 		(statement query)
 		(string (statement-prepare (make-statement *transaction*) query)))))
@@ -322,7 +334,6 @@
     
 
 (defun execute-many (query params)
-  (check-trans-handle *transaction*)
   (let ((stmt (etypecase query
 		(statement query)
 		(string (statement-prepare (make-statement *transaction*) query)))))
@@ -331,7 +342,6 @@
 
 
 (defun callproc (name &rest params)
-  (check-trans-handle *transaction*)
   (let* ((p? (make-list (length params) :initial-element #\?))
 	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
 	 (stmt (statement-prepare (make-statement *transaction*) sql)))
@@ -374,10 +384,6 @@
   (fetch stmt :single))
   
 
-(defun begin (&optional trans)
-  (transaction-start (or trans *transaction*)))
-
-
 (defun commit (&optional trans)
   (transaction-commit (or trans *transaction*)))
 
@@ -403,7 +409,8 @@
 
 (defun disconnect* ()
   (when *connection*
-    (when *transaction* (rollback *transaction*))
+    (when *transaction*
+      (ignore-errors (rollback *transaction*)))
     (ignore-errors (disconnect *connection*))
     (setf *connection* nil *transaction* nil))
   (values))
@@ -420,7 +427,7 @@
 	:report "Force connect to database (disconnect previous)."
 	(disconnect*))))
   (setf *connection* (apply #'connect args))
-  (setf *transaction* (make-transaction *connection* :auto-commit t))
+  (setf *transaction* (start-transaction *connection* :auto-commit t))
   (values))
 
 
@@ -436,8 +443,4 @@
 
 (defun drop-database* ()
   (drop-database *connection*))
-
-
-(defmacro with-transaction* ((&optional var) &body body)
-  `(with-transaction (*connection* ,var) ,@body))
 

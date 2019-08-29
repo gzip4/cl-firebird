@@ -66,7 +66,7 @@
 
 
 (defclass statement ()
-  ((trans :initarg :trans :reader transaction)
+  ((trans :initarg :trans :accessor transaction)
    (handle :initform -1 :reader object-handle)
    (open :initform nil :reader statement-open-p)
    (stmt-type :initform nil :reader statement-type)
