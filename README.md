@@ -1,2 +1,2 @@
 # cl-firebird
-Firebird database client library integration with Common Lisp (CFFI)
+Firebird database remote protocol client in Common Lisp
