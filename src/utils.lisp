@@ -87,7 +87,7 @@ is replaced with replacement."
 (declaim (inline subvec bytes-to-long bytes-to-long-le
 		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
 		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
-		 signed-int32 str byte-stream byte-stream-output))
+		 str byte-stream byte-stream-output))
 
 (defun subvec (v offset length)
   (declare (type vector v) (type fixnum offset length))
@@ -186,15 +186,6 @@ is replaced with replacement."
 	(/ signed (expt 10 (abs scale))))))
 
 
-;; XXX: deprecate
-(defun signed-int32 (x)
-  (if (<= x 0)
-      x
-      (if (<= x #x7fffffff)
-	  x
-	  (- x #x100000000))))
-
-
 (defmacro string+= (v &rest args)
   `(setf ,v (concatenate 'string ,v ,@args)))
 
@@ -211,17 +202,4 @@ is replaced with replacement."
 		      (integer (write-byte (if (< x 0) (+ 256 x) x) ,out))
 		      (t (write-sequence x ,out))))))
       ,@body))))
-
-
-
-
-;; ????
-#+nil
-(defun bs (&rest byte-array)
-  (make-array (length byte-array)
-	      :element-type '(unsigned-byte 8)
-	      :adjustable t
-	      :fill-pointer t
-	      :initial-contents byte-array))
-
 
