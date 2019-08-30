@@ -16,6 +16,7 @@
    (plugin-name)
    (plugin-list)
    (plugin-list*)
+   (buffer :initform (make-array 65536 :element-type 'nibbles:octet))
    (socket :initform nil)
    (stream)
    (stream-cypher-recv :initform nil)
@@ -39,9 +40,7 @@
    (isolation-level :accessor isolation-level)
    (use-unicode :initform nil :accessor connection-use-unicode)
    (last-event-id)
-   ;;(auto-commit :initform nil :reader auto-commit-p :writer (setf auto-commit))
    (is-services :initform nil)
-   ;;(transaction :initform nil :accessor transaction)
    ))
 
 

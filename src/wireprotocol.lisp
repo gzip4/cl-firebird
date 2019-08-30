@@ -26,6 +26,9 @@
         return r[:nbytes]
 |#
 
+(declaim (inline send-channel recv-channel %recv-int32))
+
+
 (defun send-channel (wp b)
   (when (> (length b) 0)
     (log:trace "RAW: ~a #x~a" (length b) (bytes-to-hex b))
@@ -37,37 +40,39 @@
       (write-sequence b s)
       (force-output s)))
   (values))
-    
+
 
 (defun recv-channel (wp nbytes &optional word-alignment)
   (declare (type fixnum nbytes) (type boolean word-alignment))
   (if (zerop nbytes)
-      (vector)
-      (let ((n nbytes))
-	(when (and word-alignment (not (zerop (mod n 4))))
-	  (incf n (- 4 (mod n 4))))
-	(let ((b (make-array n :element-type '(unsigned-byte 8) :initial-element 0)))
-	  #+nil
-	  (let ((s (usocket:wait-for-input (slot-value wp 'socket) :timeout 1)))
-	    (log:info s))
-	  #+nil(log:info (usocket:socket-state (slot-value wp 'socket)))
-	  ;; XXX: usocket:wait-for-input !!!
-	  (when (/= n (read-sequence b (slot-value wp 'stream)))
-	    (error "Unexpected end of stream: ~a" (slot-value wp 'stream)))
-	  (log:trace "RAW: ~a ~a~%#x~a ~a"
-	  	     (length b) b (bytes-to-hex b) (bytes-to-long b))
-	  (when (slot-value wp 'stream-cypher-recv)
-	    (ironclad:decrypt-in-place (slot-value wp 'stream-cypher-recv) b)
-	    (log:trace "DECRYPTED: ~a ~a~%#x~a ~a"
-	    	       (length b) b (bytes-to-hex b) (bytes-to-long b)))
-	  (values (subseq b 0 nbytes))))))
+      #()
+      (with-slots (buffer stream stream-cypher-recv) wp
+	(let* ((n nbytes) (pad (mod n 4)))
+	  (when (and word-alignment (not (zerop pad))) (incf n (- 4 pad)))
+	  (let ((b (if (> n (length buffer))
+		       (make-array n :element-type 'nibbles:octet)
+		       (subvec buffer 0 n)))) ; displace buffer
+	    #+nil
+	    (let ((s (usocket:wait-for-input (slot-value wp 'socket) :timeout 1)))
+	      (log:info s))
+	    #+nil(log:info (usocket:socket-state (slot-value wp 'socket)))
+	    ;; XXX: usocket:wait-for-input !!!
+	    (when (/= n (read-sequence b stream))
+	      (error "Unexpected end of stream: ~a" stream))
+	    (setf b (copy-seq b)) ; must copy, because next call destructs buffer
+	    (log:trace "RAW: ~a ~a~%#x~a ~a"
+	  	       (length b) b (bytes-to-hex b) (bytes-to-long b))
+	    (when stream-cypher-recv
+	      (crypto:decrypt-in-place stream-cypher-recv b)
+	      (log:trace "DECRYPTED: ~a ~a~%#x~a ~a"
+	    		 (length b) b (bytes-to-hex b) (bytes-to-long b)))
+	    (values (if (= n nbytes) b (subvec b 0 nbytes))))))))
 
-
-(declaim (inline %recv-int32))
 
 (defun %recv-int32 (wp)
   ;; XXX: (u)int32 ?
-  (bytes-to-long (recv-channel wp 4)))
+  (unsigned-to-signed-int
+   (bytes-to-long (recv-channel wp 4))))
 
 
 (defun %pack-cnct-param (k v)
@@ -152,19 +157,6 @@
       (values cnct-params))))
 
 
-#+nil
-(defun %encode-proto/2 (version arch-type min max weigth)
-  (assert (<= (integer-length version) 16))
-  (let ((proto #xffffffffffffffffffffffffffffffffffffffff))
-    (when (= 1 (ldb (byte 1 15) version))
-      (setf version (logior #xffff0000 version)))
-    (setf (ldb (byte 32 128) proto) version
-	  (ldb (byte 32 96)  proto) arch-type
-	  (ldb (byte 32 64)  proto) min
-	  (ldb (byte 32 32)  proto) max
-	  (ldb (byte 32 0)   proto) weigth)
-    (values (long-to-bytes proto 20) proto)))
-
 (defun %encode-proto (version arch-type min max weigth)
   (when (= 1 (ldb (byte 1 15) version))
     (setf version (logior #xffff0000 version)))
@@ -178,11 +170,11 @@
 
 (defparameter +protocols+
   (list
-   (%encode-proto +protocol-version10+ 1 2 5 2)
-   (%encode-proto +protocol-version11+ 1 2 5 4)
-   (%encode-proto +protocol-version12+ 1 2 5 6)
-   (%encode-proto +protocol-version13+ 1 2 5 8)))
-  
+   (%encode-proto +protocol-version10+ 1 2 3 2)
+   (%encode-proto +protocol-version11+ 1 5 5 4)
+   (%encode-proto +protocol-version12+ 1 5 5 6)
+   (%encode-proto +protocol-version13+ 1 5 5 8)))
+
 
 (defun wp-op-connect (wp auth-plugin wire-crypt)
   (log:debug wp)
@@ -793,7 +785,7 @@
 		(if (> slen +max-char-length+)
 		    (progn (setf v (%create-blob wp trans-handle s))
 			   (append-bytes blr 9 0))
-		    (progn (setf v (make-bytes s (pad4-bytes slen)))
+		    (progn (setf v (make-bytes s (pad-4-bytes slen)))
 			   (append-bytes blr 14
 					 (ldb (byte 8 0) slen)
 					 (ldb (byte 8 8) slen))))))
@@ -806,7 +798,7 @@
 	      (log:trace "DEFAULT: string =>" p (type-of p))
 	      (let* ((s (str-to-bytes (str p)))
 		     (nbytes (length s)))
-		(setf v (make-bytes s (pad4-bytes nbytes)))
+		(setf v (make-bytes s (pad-4-bytes nbytes)))
 		(append-bytes blr 14 (ldb (byte 8 0) nbytes)
 			      (ldb (byte 8 8) nbytes))))) ; cond
        :do (append-bytes blr 7 0) 
@@ -1081,7 +1073,7 @@
 (defun wp-op-put-segment (wp blob-handle data)
   (log:debug wp blob-handle)
   (let* ((ln (length data))
-	 (pad (pad4-bytes ln))
+	 (pad (pad-4-bytes ln))
 	 (packet (with-xdr
 		  (xdr-int32 +op-put-segment+)
 		  (xdr-int32 blob-handle)
@@ -1097,13 +1089,14 @@
   (log:debug wp blob-handle)
   (let* ((ln (length data))
 	 (ln2 (+ ln 2))
-	 (pad (pad4-bytes ln2))
+	 (pad (pad-4-bytes ln2))
 	 (packet (with-xdr
 		  (xdr-int32 +op-batch-segments+)
 		  (xdr-int32 blob-handle)
 		  (xdr-int32 ln2)
 		  (xdr-int32 ln2))))
     (log:trace packet)
+    ;; XXX: union in one data packet
     (send-channel wp packet)
     (send-channel wp (make-bytes (long-to-bytes ln 2) data pad)))
   (values))

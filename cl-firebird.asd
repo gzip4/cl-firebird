@@ -20,6 +20,7 @@
 		  :components ((:file "packages")
 			       (:file "consts")
 			       (:file "specials")
+			       (:file "ironclad")
 			       (:file "utils")
 			       (:file "conditions")
 			       (:file "messages")

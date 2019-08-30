@@ -4,16 +4,12 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (fdefinition 'repr) #'write-to-string))
 
-(defun pad4-bytes (x)
-  (let ((m (mod x 4)))
-    (if (zerop m)
-	#()
-	(subseq #(0 0 0) 0 (- 4 m)))))
-
-(defun %write-array-padding (stream array-length)
-  (let ((m (mod array-length 4)))
-    (unless (zerop m)
-      (write-sequence (subseq #(0 0 0) 0 (- 4 m)) stream))))
+(defun pad-4-bytes (x)
+  (case (- 4 (mod x 4))
+    (3 #(0 0 0))
+    (2 #(0 0))
+    (1 #(0))
+    (0 #())))
 
 (defmacro with-xdr (&body body)
   (let* ((stream (gensym "STREAM")))
@@ -34,7 +30,7 @@
   (let ((len (length octets)))
     (nibbles:write-sb32/be len *xdr*)
     (write-sequence octets *xdr*)
-    (%write-array-padding *xdr* len)))
+    (write-sequence (pad-4-bytes len) *xdr*)))
 
 (defun xdr-string (string &key (external-format :utf-8))
   (let ((octets (flex:string-to-octets string :external-format external-format)))
@@ -53,7 +49,7 @@
 	   ((signed-byte 32)   (nibbles:write-sb32/be x stream))
 	   ((unsigned-byte 64) (nibbles:write-ub64/be x stream))
 	   ((signed-byte 64)   (nibbles:write-sb64/be x stream))
-	   ((or vector array list) (write-sequence x stream)))))
+	   ((or vector list)   (write-sequence x stream)))))
 
 
 (defun make-bytes (&rest args)
@@ -88,10 +84,17 @@ is replaced with replacement."
      do (incf start size)))
 
 
-(declaim (inline seq-to-bytes bytes-to-long bytes-to-long-le long-to-bytes long-to-bytes-le
-		 long-to-hex bytes-to-hex str-to-bytes bytes-to-str
-		 hex-to-bytes hex-to-long signed-int32 str
-		 byte-stream byte-stream-output))
+(declaim (inline subvec seq-to-bytes bytes-to-long bytes-to-long-le
+		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
+		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
+		 signed-int32 str byte-stream byte-stream-output))
+
+(defun subvec (v offset length)
+  (declare (type vector v) (type fixnum offset length))
+  (make-array length
+	      :element-type (array-element-type v)
+	      :displaced-to v
+	      :displaced-index-offset offset))
 
 (defun byte-stream ()
   (flexi-streams:make-in-memory-output-stream))
@@ -115,24 +118,23 @@ is replaced with replacement."
     (string x)
     (t (write-to-string x))))
 
-
 (defun seq-to-bytes (seq)
   (coerce seq '(vector (unsigned-byte 8))))
 ;;  (coerce seq '(simple-array (unsigned-byte 8) *)))
 
 (defun bytes-to-long (s)
-  (ironclad:octets-to-integer (seq-to-bytes s) :big-endian t))
+  (octets-to-integer s :big-endian t))
 
 (defun bytes-to-long-le (s)
-  (ironclad:octets-to-integer (seq-to-bytes s) :big-endian nil))
+  (octets-to-integer s :big-endian nil))
 
 (defun long-to-bytes (n &optional nbytes)
-  (ironclad:integer-to-octets n :big-endian t
-			      :n-bits (if nbytes (* 8 nbytes))))
+  (integer-to-octets n :big-endian t
+		     :n-bits (if nbytes (* 8 nbytes))))
 
 (defun long-to-bytes-le (n &optional nbytes)
-  (ironclad:integer-to-octets n :big-endian nil
-			      :n-bits (if nbytes (* 8 nbytes))))
+  (integer-to-octets n :big-endian nil
+		     :n-bits (if nbytes (* 8 nbytes))))
 
 (defun bytes-to-long/naive (s)
   (loop with r = 0
@@ -149,11 +151,11 @@ is replaced with replacement."
        finally (write-sequence r s))))
 
 (defun long-to-hex (n)
-  (ironclad:byte-array-to-hex-string
-   (ironclad:integer-to-octets n)))
+  (byte-array-to-hex-string
+   (integer-to-octets n)))
 
 (defun bytes-to-hex (s)
-  (ironclad:byte-array-to-hex-string s))
+  (byte-array-to-hex-string s))
 
 (defun str-to-bytes (s)
   (flex:string-to-octets s :external-format :utf8))
@@ -166,16 +168,14 @@ is replaced with replacement."
       (flex:octets-to-string s :external-format :latin1))))
 
 (defun hex-to-bytes (h)
-  (ironclad:hex-string-to-byte-array h))
+  (hex-string-to-byte-array h))
 
 (defun hex-to-long (h)
-  (ironclad:octets-to-integer
-   (ironclad:hex-string-to-byte-array
+  (octets-to-integer
+   (hex-string-to-byte-array
     (if (zerop (mod (length h) 2))
 	h
-	(with-output-to-string (s)
-          (write-char #\0 s)
-          (write-string h s))))))
+	(format nil "0~a" h)))))
 
 
 (defun unsigned-to-signed-int (x &optional (scale 0))
@@ -190,6 +190,7 @@ is replaced with replacement."
 	(/ signed (expt 10 (abs scale))))))
 
 
+;; XXX: deprecate
 (defun signed-int32 (x)
   (if (<= x 0)
       x
@@ -202,7 +203,7 @@ is replaced with replacement."
   `(setf ,v (concatenate 'string ,v ,@args)))
 
 
-;; deprecated
+;; XXX: deprecate
 (defmacro with-bytes (&body body)
   (let ((out (gensym "BYTE-STREAM")))
   `(flex:with-output-to-sequence
