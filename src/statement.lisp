@@ -29,14 +29,15 @@
 
 
 (defun statement-allocate (stmt)
-  (let ((conn (connection stmt)))
-    (with-slots (accept-type lazy-response-count) conn
-      (wp-op-allocate-statement conn)
-      (if (= accept-type +ptype-lazy-send+)
-	  (progn (incf lazy-response-count)
-		 (setf (slot-value stmt 'handle) -1))
-	  (setf (slot-value stmt 'handle)
-		(wp-op-response conn)))))
+  (unless (object-handle stmt)
+    (let ((conn (connection stmt)))
+      (with-slots (accept-type lazy-response-count) conn
+	(wp-op-allocate-statement conn)
+	(if (= accept-type +ptype-lazy-send+)
+	    (progn (incf lazy-response-count)
+		   (setf (slot-value stmt 'handle) -1))
+	    (setf (slot-value stmt 'handle)
+		  (wp-op-response conn))))))
   (values stmt))
 
 
@@ -55,11 +56,11 @@
 
 (defun statement-prepare (stmt sql &key explain-plan)
   (let ((conn (connection stmt))
-	(handle (slot-value stmt 'handle))
+	(handle (object-handle stmt))
 	(trans-handle (object-handle (transaction stmt))))
     (setf (slot-value stmt 'plan) nil)
-    (wp-op-prepare-statement conn handle trans-handle sql (if explain-plan +isc-info-sql-get-plan+))
-
+    (wp-op-prepare-statement conn handle trans-handle sql
+			     (if explain-plan +isc-info-sql-get-plan+))
     (with-slots (lazy-response-count) conn
       (unless (zerop lazy-response-count)
 	(decf lazy-response-count)
@@ -76,9 +77,7 @@
 	(multiple-value-bind (stmt-type xsqlda)
 	    (xsqlvar-parse-xsqlda (subseq buf i) conn (slot-value stmt 'handle))
 	  (setf (slot-value stmt 'stmt-type) stmt-type)
-	  (setf (slot-value stmt 'xsqlda) xsqlda)
-	  (when (= stmt-type +isc-info-sql-stmt-select+)
-	    (setf (slot-value stmt 'open) t))))))
+	  (setf (slot-value stmt 'xsqlda) xsqlda)))))
   (values stmt))
 				 
 
@@ -104,18 +103,25 @@
   (wp-op-execute (connection stmt)
 		 (object-handle stmt)
 		 (object-handle (transaction stmt))
-		 (%statement-convert-params params)))
+		 (%statement-convert-params params))
+  (when (= (statement-type stmt) +isc-info-sql-stmt-select+)
+    (setf (slot-value stmt 'open) t)))
 
 
 (defun statement-execute-list (stmt &optional params)
   (if (= (statement-type stmt) +isc-info-sql-stmt-exec-procedure+)
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))
-  (handler-case
-      (wp-op-response (connection stmt))
-    (warning (w)
-      (setf (slot-value stmt 'open) nil)
-      (warn w)))
+  (block out
+    (handler-bind ((warning
+		    (lambda (w) (setf (slot-value stmt 'open) nil) w))
+		   (operational-error
+		    (lambda (e)
+		      (setf (slot-value stmt 'open) nil)
+		      ;; Attempt to reopen an open cursor
+		      (when (member 335544576 (error-gds-codes e))
+			(return-from out)))))
+      (wp-op-response (connection stmt))))
   (setf (slot-value (transaction stmt) 'dirty) t)
   (values stmt))
 
@@ -154,6 +160,7 @@
 	(if plist
 	    (wp-op-fetch-response-plist conn handle xsqlda)
 	    (wp-op-fetch-response conn handle xsqlda))
+      (statement-close stmt)
       (values (first rows) stmt))))
 
 
@@ -181,7 +188,6 @@
 
 
 (defun statement-row-count (stmt)
-  (log:debug stmt)
   (let ((conn (connection stmt)))
     (wp-op-info-sql conn (object-handle stmt) (make-bytes +isc-info-sql-records+))
     (multiple-value-bind (h oid buf)
@@ -199,7 +205,6 @@
 
 
 (defun statement-close (stmt)
-  (log:debug stmt)
   (let ((conn (connection stmt)))
     (when (and (statement-type stmt)
 	       (= (statement-type stmt) +isc-info-sql-stmt-select+)
@@ -214,7 +219,6 @@
 
 
 (defun statement-drop (stmt)
-  (log:debug stmt)
   (let ((conn (connection stmt)))
     (when (and (object-handle stmt) (/= (object-handle stmt) -1))
       (wp-op-free-statement conn (object-handle stmt) +dsql-drop+)
@@ -223,5 +227,5 @@
 	    (incf lazy-response-count)
 	    (wp-op-response conn)))))
   (setf (slot-value stmt 'open) nil
-	(slot-value stmt 'handle) -1)
+	(slot-value stmt 'handle) nil)
   (values stmt))

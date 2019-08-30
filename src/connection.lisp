@@ -349,29 +349,28 @@
 	 (progn
 	   (statement-execute-list stmt params)
 	   (statement-result stmt))
-      (statement-close stmt))))
+      (statement-drop stmt))))
 
 
 (defun fetch (&optional stmt (result :fetch-all))
   (setf stmt (or stmt *statement*))
   (let ((need-close t))
     (unwind-protect
-	 (when (statement-open-p stmt)
-	   (case result
-	     (:fetch-all (statement-fetch-all stmt nil))
-	     (:fetch-all-plist (statement-fetch-all stmt t))
-	     (:fetch-one (statement-fetch-one stmt))
-	     (:fetch-one-plist (statement-fetch-one stmt t))
-	     (:one (statement-fetch-one stmt))
-	     (:one-plist (statement-fetch-one stmt t))
-	     (:single (statement-fetch-single stmt))
-	     (:fetcher
-	      (setf need-close nil)
-	      (statement-make-fetcher stmt))
-	     (:fetcher-plist
-	      (setf need-close nil)
-	      (statement-make-fetcher stmt t))
-	     (otherwise (error "Unknown result type: ~a" result))))
+	 (case result
+	   (:fetch-all (statement-fetch-all stmt nil))
+	   (:fetch-all-plist (statement-fetch-all stmt t))
+	   (:fetch-one (statement-fetch-one stmt))
+	   (:fetch-one-plist (statement-fetch-one stmt t))
+	   (:one (statement-fetch-one stmt))
+	   (:one-plist (statement-fetch-one stmt t))
+	   (:single (statement-fetch-single stmt))
+	   (:fetcher
+	    (setf need-close nil)
+	    (statement-make-fetcher stmt))
+	   (:fetcher-plist
+	    (setf need-close nil)
+	    (statement-make-fetcher stmt t))
+	   (otherwise (error "Unknown result type: ~a" result)))
       (when need-close
 	(statement-close stmt)))))
   

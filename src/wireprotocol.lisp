@@ -276,7 +276,14 @@
      :while (and (= op-code +op-response+)
 		 (> (slot-value wp 'lazy-response-count) 0))
      :do (progn (decf (slot-value wp 'lazy-response-count))
-		(%parse-op-response wp)
+		(log:debug wp (slot-value wp 'lazy-response-count))
+		(handler-case
+		    (%parse-op-response wp)
+		  (operational-error (e)
+		    (warn "~aGDS-CODES: ~a~%SQL-CODE: ~a"
+			  (error-message e)
+			  (error-gds-codes e)
+			  (error-sql-code e))))
 		(%recv-int32 wp))))
 
 
