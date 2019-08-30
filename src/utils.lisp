@@ -84,7 +84,7 @@ is replaced with replacement."
      do (incf start size)))
 
 
-(declaim (inline subvec seq-to-bytes bytes-to-long bytes-to-long-le
+(declaim (inline subvec bytes-to-long bytes-to-long-le
 		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
 		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
 		 signed-int32 str byte-stream byte-stream-output))
@@ -117,10 +117,6 @@ is replaced with replacement."
   (typecase x
     (string x)
     (t (write-to-string x))))
-
-(defun seq-to-bytes (seq)
-  (coerce seq '(vector (unsigned-byte 8))))
-;;  (coerce seq '(simple-array (unsigned-byte 8) *)))
 
 (defun bytes-to-long (s)
   (octets-to-integer s :big-endian t))
