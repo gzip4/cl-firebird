@@ -20,10 +20,6 @@
    +isc-info-sql-stmt-savepoint+ :savepoint))
 
 
-(defun make-statement (transaction)
-  (make-instance 'statement :trans transaction))
-
-
 (defmethod connection ((object statement))
   (connection (transaction object)))
 
@@ -41,8 +37,8 @@
   (values stmt))
 
 
-(defmethod initialize-instance :after ((stmt statement) &key)
-  (statement-allocate stmt))
+(defun make-statement (transaction)
+  (statement-allocate (make-instance 'statement :trans transaction)))
 
 
 (defmethod print-object ((object statement) stream)
