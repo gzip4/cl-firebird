@@ -62,7 +62,7 @@
 (defconstant +pflag-compress+ #x100)  ; Turn on compression if possible
 
 (defconstant +max-objct-handles+ 65000)
-(defconstant +invalid-object+ 0xffff)
+(defconstant +invalid-object+ #xffffffff)
 
 (defparameter +default-charset+ "UTF8")
 (defparameter +legacy-password-salt+ "9z")
