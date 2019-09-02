@@ -246,6 +246,22 @@ blr_version4 = 4
 blr_version5 = 5
 blr_eoc = 76
 blr_end = 255
+
+	    case SQL_BLOB:
+		    if (protocol >= PROTOCOL_VERSION12)
+		    {
+			    appendUChar(blr_blob2);
+			    appendUShort(subType);
+			    appendUShort(charSet);
+		    }
+		    else
+		    {
+			    // Servers prior to FB 2.5 don't expect blr_blob2 in remote messages,
+			    // so BLOB IDs are described as blr_quad instead
+			    appendUChar(blr_quad);
+			    appendUChar(0);
+		    }
+
 |#
 
 (defun xsqlvar-calc-blr (xsqlda)

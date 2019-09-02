@@ -175,6 +175,7 @@
    (%encode-proto +protocol-version12+ 1 5 5 6)
    (%encode-proto +protocol-version13+ 1 5 5 8)))
 
+;;  Starting with CONNECT_VERSION3, strings inside the op_connect packet are UTF8 encoded
 
 (defun wp-op-connect (wp auth-plugin wire-crypt)
   (log:debug wp)
@@ -626,6 +627,9 @@
   (values))
 
 
+;; XXX: wp-op-exec-immediate2
+
+
 (defun wp-op-info-transaction (wp trans-handle info-requests)
   (log:debug wp trans-handle info-requests)
   (let ((packet (with-xdr
@@ -767,7 +771,7 @@
 	    (map 'vector (lambda (x) (- (char-code x) (char-code #\0))) digits)
 	    (- (length exponent)))))
     
-    
+
 (defun %params-to-blr (wp trans-handle params)
   "Convert parameter array to BLR and values format."
   (let ((ln (* 2 (length params)))
