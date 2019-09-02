@@ -4,12 +4,23 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (fdefinition 'repr) #'write-to-string))
 
-(defmacro with-xdr (&body body)
-  (let* ((stream (gensym "STREAM")))
-    `(flexi-streams:with-output-to-sequence
-      (,stream)
-      (let ((*xdr* ,stream))
-	,@body))))
+(declaim (inline byte-stream byte-stream-output))
+
+(defun byte-stream ()
+  (flexi-streams:make-in-memory-output-stream))
+
+(defun byte-stream-output (s)
+  (flexi-streams:get-output-stream-sequence s))
+
+(defmacro with-byte-stream ((var) &body body)
+  `(let (,var)
+     (unwind-protect
+	  (let ((*xdr* (byte-stream)))	; (xdr-*) stream
+	    (setf ,var *xdr*)
+	    ,@body
+	    (byte-stream-output ,var))
+       (when ,var (close ,var)))))
+
 
 (declaim (inline pad-4-bytes xdr-int32 xdr-uint32 xdr-octets xdr-string))
 
@@ -42,14 +53,14 @@
      :do (etypecase x
 	   (null nil)
 	   ((unsigned-byte 8)  (write-byte x stream))
-	   ((signed-byte 8)    (write-byte ( + 256 x) stream))
+	   ((signed-byte 8)    (write-byte (+ 256 x) stream))
 	   ((unsigned-byte 16) (nibbles:write-ub16/be x stream))
 	   ((signed-byte 16)   (nibbles:write-sb16/be x stream))
 	   ((unsigned-byte 32) (nibbles:write-ub32/be x stream))
 	   ((signed-byte 32)   (nibbles:write-sb32/be x stream))
 	   ((unsigned-byte 64) (nibbles:write-ub64/be x stream))
 	   ((signed-byte 64)   (nibbles:write-sb64/be x stream))
-	   ((or vector list)   (write-sequence x stream)))))
+	   (sequence           (write-sequence x stream)))))
 
 
 (declaim (inline make-bytes))
@@ -89,8 +100,7 @@ is replaced with replacement."
 (declaim (inline subvec bytes-to-long bytes-to-long-le
 		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
 		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
-		 str byte-stream byte-stream-output
-		 bytes-to-int bytes-to-int-le))
+		 str bytes-to-int bytes-to-int-le))
 
 (defun subvec (v offset length)
   (declare (type vector v) (type fixnum offset length))
@@ -98,23 +108,6 @@ is replaced with replacement."
 	      :element-type (array-element-type v)
 	      :displaced-to v
 	      :displaced-index-offset offset))
-
-(defun byte-stream ()
-  (flexi-streams:make-in-memory-output-stream))
-
-(defun byte-stream-output (s)
-  (flexi-streams:get-output-stream-sequence s))
-
-(defmacro with-byte-stream ((var) &body body)
-  (let ((bs (gensym "BYTE-STREAM")))
-    `(let ((,bs (byte-stream)))
-       (unwind-protect
-	    (let ((,var ,bs))
-	      (declare (ignorable ,var))
-	      ,@body
-	      (byte-stream-output ,bs))
-	 (when ,bs (close ,bs))))))
-
 
 (defun str (x)
   (typecase x
@@ -134,20 +127,6 @@ is replaced with replacement."
 (defun long-to-bytes-le (n &optional nbytes)
   (integer-to-octets n :big-endian nil
 		     :n-bits (if nbytes (* 8 nbytes))))
-
-(defun bytes-to-long/naive (s)
-  (loop with r = 0
-     for c across s
-     do (progn (setf r (+ (ash r 8) c)))
-     finally (return r)))
-
-(defun long-to-bytes/naive (n)
-  (flex:with-output-to-sequence (s)
-    (loop with r = (list)
-       while (> n 0)
-       do (push (logand n #xff) r)
-       do (setf n (ash n -8))
-       finally (write-sequence r s))))
 
 (defun long-to-hex (n)
   (byte-array-to-hex-string

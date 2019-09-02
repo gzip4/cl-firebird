@@ -74,7 +74,7 @@
 
 
 (defun %pack-cnct-param (k v)
-  (flex:with-output-to-sequence (s)
+  (with-byte-stream (s)
     (if (/= k +cnct-specific-data+)
 	(progn (write-byte k s)
 	       (write-byte (length v) s)
@@ -168,26 +168,26 @@
 
 (defparameter +protocols+
   (list
-   (%encode-proto +protocol-version10+ 1 2 3 2)
-   (%encode-proto +protocol-version11+ 1 5 5 4)
-   (%encode-proto +protocol-version12+ 1 5 5 6)
-   (%encode-proto +protocol-version13+ 1 5 5 8)))
+   #.(%encode-proto +protocol-version10+ 1 2 3 2)
+   #.(%encode-proto +protocol-version11+ 1 5 5 4)
+   #.(%encode-proto +protocol-version12+ 1 5 5 6)
+   #.(%encode-proto +protocol-version13+ 1 5 5 8)
+   #.(%encode-proto +protocol-version16+ 1 5 5 10)))
 
 ;;  Starting with CONNECT_VERSION3, strings inside the op_connect packet are UTF8 encoded
 
 (defun wp-op-connect (wp auth-plugin wire-crypt)
   (log:debug wp)
   (let ((packet
-	 (make-bytes
-	  (with-xdr
-	    (xdr-int32 +op-connect+)
-	    (xdr-int32 +op-attach+)
-	    (xdr-int32 3)		; CONNECT_VERSION
-	    (xdr-int32 1)		; arch_generic
-	    (xdr-string (or (slot-value wp 'filename) ""))
-	    (xdr-int32 (length +protocols+))
-	    (xdr-octets (wp-uid wp auth-plugin wire-crypt)))
-	  (apply #'make-bytes +protocols+))))
+	 (with-byte-stream (s)
+	   (xdr-int32 +op-connect+)
+	   (xdr-int32 +op-attach+)
+	   (xdr-int32 +connect-version3+)
+	   (xdr-int32 +arch-generic+)
+	   (xdr-string (or (slot-value wp 'filename) ""))
+	   (xdr-int32 (length +protocols+))
+	   (xdr-octets (wp-uid wp auth-plugin wire-crypt))
+	   (write-sequence (apply #'make-bytes +protocols+) s))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -300,20 +300,22 @@
 
 (defun %wp-op-accept/wire-crypt (wp auth-data session-key)
   (log:trace wp)
-  (let ((packet (with-xdr
-		  (xdr-int32 +op-cont-auth+)
-		  (xdr-string (bytes-to-hex auth-data))
-		  (xdr-string (slot-value wp 'accept-plugin-name))
-		  (xdr-octets (str-to-bytes (slot-value wp 'plugin-list)))
-		  (xdr-octets #()))))
+  (let ((packet
+	 (with-byte-stream (s)
+	   (xdr-int32 +op-cont-auth+)
+	   (xdr-string (bytes-to-hex auth-data))
+	   (xdr-string (slot-value wp 'accept-plugin-name))
+	   (xdr-octets (str-to-bytes (slot-value wp 'plugin-list)))
+	   (xdr-octets #()))))
     (log:trace packet)
     (send-channel wp packet)
     (wp-op-response wp))
 
-  (let ((packet (with-xdr
-		  (xdr-int32 +op-crypt+)
-		  (xdr-string "Arc4")
-		  (xdr-string "Symmetric"))))
+  (let ((packet
+	 (with-byte-stream (s)
+	   (xdr-int32 +op-crypt+)
+	   (xdr-string "Arc4")
+	   (xdr-string "Symmetric"))))
     (log:trace packet)
     (send-channel wp packet))
 
@@ -470,12 +472,11 @@
 (defun wp-op-create (wp &optional (page-size 4096))
   (log:debug wp page-size)
   (let* ((dpb (create-dpb-create wp page-size))
-	 (packet (with-xdr
+	 (packet (with-byte-stream (s)
 		   (xdr-int32 +op-create+)
 		   (xdr-int32 0)	; Database Object ID
 		   (xdr-string (slot-value wp 'filename))
 		   (xdr-octets dpb))))
-    (log:trace "DPB ~a" (bytes-to-hex (with-xdr (xdr-octets dpb))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -486,7 +487,7 @@
   (let ((db-handle (slot-value wp 'db-handle)))
     (unless db-handle
       (error 'operational-error :msg "op_drop_database() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-drop-database+)
 		    (xdr-int32 db-handle))))
       (log:trace packet)
@@ -529,12 +530,11 @@
 (defun wp-op-attach (wp)
   (log:debug wp)
   (let* ((dpb (create-dpb-attach wp))
-	 (packet (with-xdr
+	 (packet (with-byte-stream (s)
 		   (xdr-int32 +op-attach+)
 		   (xdr-int32 0) ; Database Object ID
 		   (xdr-string (slot-value wp 'filename))
 		   (xdr-octets dpb))))
-    (log:trace "DPB ~a" (bytes-to-hex (with-xdr (xdr-octets dpb))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -545,7 +545,7 @@
   (let ((db-handle (slot-value wp 'db-handle)))
     (unless db-handle
       (error 'operational-error :msg "op_detach() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-detach+)
 		    (xdr-int32 db-handle))))
       (log:trace packet)
@@ -558,7 +558,7 @@
   (let ((db-handle (slot-value wp 'db-handle)))
     (unless db-handle
       (error 'operational-error :msg "op_transaction() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-transaction+)
 		    (xdr-int32 db-handle)
 		    (xdr-octets tpb))))
@@ -569,7 +569,7 @@
 
 (defun wp-op-commit (wp trans-handle)
   (log:debug wp trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-commit+)
 		  (xdr-int32 trans-handle))))
     (log:trace packet)
@@ -579,7 +579,7 @@
 
 (defun wp-op-commit-retaining (wp trans-handle)
   (log:debug wp trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-commit-retaining+)
 		  (xdr-int32 trans-handle))))
     (log:trace packet)
@@ -589,7 +589,7 @@
 
 (defun wp-op-rollback (wp trans-handle)
   (log:debug wp trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-rollback+)
 		  (xdr-int32 trans-handle))))
     (log:trace packet)
@@ -599,7 +599,7 @@
 
 (defun wp-op-rollback-retaining (wp trans-handle)
   (log:debug wp trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-rollback-retaining+)
 		  (xdr-int32 trans-handle))))
     (log:trace packet)
@@ -612,7 +612,7 @@
   (let ((db-handle (slot-value wp 'db-handle)))
     (unless db-handle
       (error 'operational-error :msg "op_exec_immediate() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-exec-immediate+)
 		    (xdr-int32 trans-handle)
 		    (xdr-int32 db-handle)
@@ -630,7 +630,7 @@
 
 (defun wp-op-info-transaction (wp trans-handle info-requests)
   (log:debug wp trans-handle info-requests)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-info-transaction+)
 		  (xdr-int32 trans-handle)
 		  (xdr-int32 0)
@@ -645,7 +645,7 @@
   (let ((db-handle (slot-value wp 'db-handle)))
     (unless db-handle
       (error 'operational-error :msg "op_info_database() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-info-database+)
 		    (xdr-int32 db-handle)
 		    (xdr-int32 0)
@@ -661,7 +661,7 @@
   (with-slots (db-handle) wp
     (unless db-handle
       (error 'operational-error :msg "op_allocate_statement() Invalid db handle"))
-    (let ((packet (with-xdr
+    (let ((packet (with-byte-stream (s)
 		    (xdr-int32 +op-allocate-statement+)
 		    (xdr-int32 db-handle))))
       (log:trace packet)
@@ -671,7 +671,7 @@
 
 (defun wp-op-free-statement (wp stmt-handle mode)
   (log:debug wp stmt-handle mode)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-free-statement+)
 		  (xdr-int32 stmt-handle)
 		  (xdr-int32 mode))))
@@ -686,7 +686,7 @@
   (let* ((desc-items (make-bytes option-items
 				 +isc-info-sql-stmt-type+
 				 +info-sql-select-describe-vars+))
-	 (packet (with-xdr
+	 (packet (with-byte-stream (s)
 		   (xdr-int32 +op-prepare-statement+)
 		   (xdr-int32 trans-handle)
 		   (xdr-int32 stmt-handle)
@@ -824,7 +824,7 @@
 
 (defun wp-op-execute (wp stmt-handle trans-handle params)
   (log:debug wp stmt-handle trans-handle params)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-execute+)
 		  (xdr-int32 stmt-handle)
 		  (xdr-int32 trans-handle)
@@ -839,7 +839,7 @@
 			(xdr-octets blr)
 			(xdr-int32 0)
 			(xdr-int32 1)
-			(write-sequence vals *xdr*))))))
+			(write-sequence vals s))))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -847,7 +847,7 @@
 
 (defun wp-op-execute2 (wp stmt-handle trans-handle params output-blr)
   (log:debug wp stmt-handle trans-handle params output-blr)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-execute2+)
 		  (xdr-int32 stmt-handle)
 		  (xdr-int32 trans-handle)
@@ -862,7 +862,7 @@
 			(xdr-octets blr)
 			(xdr-int32 0)
 			(xdr-int32 1)
-			(write-sequence vals *xdr*)))
+			(write-sequence vals s)))
 		  (xdr-octets output-blr)
 		  (xdr-int32 0))))
     (log:debug packet)
@@ -872,7 +872,7 @@
 
 (defun wp-op-info-sql (wp stmt-handle vars)
   (log:debug wp stmt-handle vars)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-info-sql+)
 		  (xdr-int32 stmt-handle)
 		  (xdr-int32 0)
@@ -886,7 +886,7 @@
 (defun wp-op-fetch (wp stmt-handle blr &optional count)
   (unless count (setf count *default-fetch-size*))
   (log:debug wp stmt-handle blr)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-fetch+)
 		  (xdr-int32 stmt-handle)
 		  (xdr-octets blr)
@@ -1045,7 +1045,7 @@
 
 (defun wp-op-open-blob (wp blob-id trans-handle)
   (log:debug wp blob-id trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-open-blob+)
 		  (xdr-int32 trans-handle)
 		  (write-sequence blob-id *xdr*))))
@@ -1056,7 +1056,7 @@
 
 (defun wp-op-create-blob2 (wp trans-handle)
   (log:debug wp trans-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-create-blob2+)
 		  (xdr-int32 0)
 		  (xdr-int32 trans-handle)
@@ -1069,7 +1069,7 @@
 
 (defun wp-op-get-segment (wp blob-handle)
   (log:debug wp blob-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-get-segment+)
 		  (xdr-int32 blob-handle)
 		  (xdr-int32 65535)
@@ -1083,7 +1083,7 @@
   (log:debug wp blob-handle)
   (let* ((ln (length data))
 	 (pad (pad-4-bytes ln))
-	 (packet (with-xdr
+	 (packet (with-byte-stream (s)
 		  (xdr-int32 +op-put-segment+)
 		  (xdr-int32 blob-handle)
 		  (xdr-int32 ln)
@@ -1099,21 +1099,22 @@
   (let* ((ln (length data))
 	 (ln2 (+ ln 2))
 	 (pad (pad-4-bytes ln2))
-	 (packet (with-xdr
+	 (packet (with-byte-stream (s)
 		  (xdr-int32 +op-batch-segments+)
 		  (xdr-int32 blob-handle)
 		  (xdr-int32 ln2)
-		  (xdr-int32 ln2))))
+		  (xdr-int32 ln2)
+		  (write-sequence (long-to-bytes ln 2) s)
+		  (write-sequence data s)
+		  (write-sequence pad s))))
     (log:trace packet)
-    ;; XXX: union in one data packet
-    (send-channel wp packet)
-    (send-channel wp (make-bytes (long-to-bytes ln 2) data pad)))
+    (send-channel wp packet))
   (values))
 
 
 (defun wp-op-close-blob (wp blob-handle)
   (log:debug wp blob-handle)
-  (let ((packet (with-xdr
+  (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-close-blob+)
 		  (xdr-int32 blob-handle))))
     (log:trace packet)
