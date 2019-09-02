@@ -1,25 +1,68 @@
 
 (in-package #:cl-firebird)
 
+;; firebird\src\remote\protocol.h 
+;; Protocol 10 includes support for warnings and removes the requirement for
+;; encoding and decoding status codes
+;; Since protocol 11 we must be separated from Borland Interbase.
+;; Therefore always set highmost bit in protocol version to 1.
+;; For unsigned protocol version this does not break version's compare.
+;; Protocol 11 has support for user authentication related
+;; operations (op_update_account_info, op_authenticate_user and
+;; op_trusted_auth). When specific operation is not supported,
+;; we say "sorry".
+;; Protocol 12 has support for asynchronous call op_cancel.
+;; Currently implemented asynchronously only for TCP/IP.
+;; Protocol 13 has support for authentication plugins (op_cont_auth).
+;; It also transfers SQL messages in the packed (null aware) format.
+;; Protocol 14:
+;;	- fixes a bug in database crypt key callback
+;; Protocol 15:
+;;	- supports crypt key callback at connect phase
+;; Protocol 16:
+;;	- supports statement timeouts
 
 (defconstant +fb-protocol-flag+ #x8000)
 (defconstant +protocol-version10+ 10)
 (defconstant +protocol-version11+ (logior +fb-protocol-flag+ 11))
 (defconstant +protocol-version12+ (logior +fb-protocol-flag+ 12))
 (defconstant +protocol-version13+ (logior +fb-protocol-flag+ 13))
+(defconstant +protocol-version14+ (logior +fb-protocol-flag+ 14))
+(defconstant +protocol-version15+ (logior +fb-protocol-flag+ 15))
+(defconstant +protocol-version16+ (logior +fb-protocol-flag+ 16))
 
 (defconstant +connect-version2+  2)
 (defconstant +connect-version3+  3)
 
 (defconstant +arch-generic+      1)   ; Generic -- always use canonical forms
+(defconstant +arch-sun+          3)
+(defconstant +arch-sun4+         8)
+(defconstant +arch-sunx86+       9)
+(defconstant +arch-hpux+        10)
+(defconstant +arch-rt+          14)
+(defconstant +arch-intel-32+    29)   ; generic Intel chip w/32-bit compilation
+(defconstant +arch-linux+       36)
+(defconstant +arch-freebsd+     37)
+(defconstant +arch-netbsd+      38)
+(defconstant +arch-darwin-ppc+  39)
+(defconstant +arch-winnt-64+    40)
+(defconstant +arch-darwin-x64+  41)
+(defconstant +arch-darwin-ppc64+ 42)
+(defconstant +arch-arm+         43)
+(defconstant +arch-max+         44)   ; Keep this at the end
 
 ;; Protocol Types (accept_type)
-(defconstant +ptype-page+        1)   ; Page server protocol (?)
-(defconstant +ptype-rpc+         2)   ; Simple remote procedure call
+;;(defconstant +ptype-page+        1)   ; Page server protocol (?)
+;;(defconstant +ptype-rpc+         2)   ; Simple remote procedure call
 (defconstant +ptype-batch-send+  3)   ; Batch sends, no asynchrony
 (defconstant +ptype-out-of-band+ 4)   ; Batch sends w/ out of band notification
 (defconstant +ptype-lazy-send+   5)   ; Deferred packets delivery
 
+;; upper byte is used for protocol flags
+(defconstant +pflag-compress+ #x100)  ; Turn on compression if possible
+
+(defconstant +max-objct-handles+ 65000)
+(defconstant +invalid-object+ 0xffff)
 
 (defparameter +default-charset+ "UTF8")
 (defparameter +legacy-password-salt+ "9z")
@@ -295,7 +338,8 @@
 (defconstant +isc-tpb-lock-timeout+ 21)
 
 
-
+;; Operation (packet) types
+(defconstant +op-void+ 0)
 (defconstant +op-connect+ 1)
 (defconstant +op-exit+ 2)
 (defconstant +op-accept+ 3)
@@ -303,6 +347,7 @@
 (defconstant +op-protocol+ 5)
 (defconstant +op-disconnect+ 6)
 (defconstant +op-response+ 9)
+;; Full context server operations
 (defconstant +op-attach+ 19)
 (defconstant +op-create+ 20)
 (defconstant +op-detach+ 21)
@@ -323,6 +368,7 @@
 (defconstant +op-connect-request+ 53)
 (defconstant +op-aux-connect+ 53)
 (defconstant +op-create-blob2+ 57)
+;; DSQL operations
 (defconstant +op-allocate-statement+ 62)
 (defconstant +op-execute+ 63)
 (defconstant +op-exec-immediate+ 64)
@@ -330,6 +376,7 @@
 (defconstant +op-fetch-response+ 66)
 (defconstant +op-free-statement+ 67)
 (defconstant +op-prepare-statement+ 68)
+(defconstant +op-set-cursor+ 69)
 (defconstant +op-info-sql+ 70)
 (defconstant +op-dummy+ 71)
 (defconstant +op-execute2+ 76)
@@ -353,6 +400,19 @@
 (defconstant +op-crypt+ 96)
 (defconstant +op-crypt-key-callback+ 97)
 (defconstant +op-cond-accept+ 98)
+
+(defconstant +op-batch-create+ 99)
+(defconstant +op-batch-msg+ 100)
+(defconstant +op-batch-exec+ 101)
+(defconstant +op-batch-rls+ 102)
+(defconstant +op-batch-cs+ 103)
+(defconstant +op-batch-regblob+ 104)
+(defconstant +op-batch-blob-stream+ 105)
+(defconstant +op-batch-set-bpb+ 106)
+(defconstant +op-repl-data+ 107)
+(defconstant +op-repl-req+ 108)
+
+
 
 (defconstant +cnct-user+ 1)
 (defconstant +cnct-passwd+ 2)
