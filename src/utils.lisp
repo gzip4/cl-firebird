@@ -4,13 +4,6 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (setf (fdefinition 'repr) #'write-to-string))
 
-(defun pad-4-bytes (x)
-  (case (- 4 (mod x 4))
-    (3 #(0 0 0))
-    (2 #(0 0))
-    (1 #(0))
-    (0 #())))
-
 (defmacro with-xdr (&body body)
   (let* ((stream (gensym "STREAM")))
     `(flexi-streams:with-output-to-sequence
@@ -18,7 +11,14 @@
       (let ((*xdr* ,stream))
 	,@body))))
 
-(declaim (inline xdr-int32 xdr-uint32))
+(declaim (inline pad-4-bytes xdr-int32 xdr-uint32 xdr-octets xdr-string))
+
+(defun pad-4-bytes (x)
+  (case (- 4 (mod x 4))
+    (3 #(0 0 0))
+    (2 #(0 0))
+    (1 #(0))
+    (0 #())))
 
 (defun xdr-int32 (x)
   (nibbles:write-sb32/be x *xdr*))
@@ -51,6 +51,8 @@
 	   ((signed-byte 64)   (nibbles:write-sb64/be x stream))
 	   ((or vector list)   (write-sequence x stream)))))
 
+
+(declaim (inline make-bytes))
 
 (defun make-bytes (&rest args)
   (flexi-streams:with-output-to-sequence
