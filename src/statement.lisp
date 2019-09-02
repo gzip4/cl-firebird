@@ -105,6 +105,7 @@
 
 
 (defun statement-execute-list (stmt &optional params)
+  (unless (statement-type stmt) (error "Statement not prepared"))
   (if (= (statement-type stmt) +isc-info-sql-stmt-exec-procedure+)
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))

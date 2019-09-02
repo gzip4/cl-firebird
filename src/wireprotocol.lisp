@@ -29,7 +29,7 @@
 (declaim (inline send-channel recv-channel recv-int32))
 
 
-(defun send-channel (wp b)
+(defun send-channel (wp b &optional (flush t))
   (when (> (length b) 0)
     (log:trace "RAW: ~a #x~a" (length b) (bytes-to-hex b))
     (let ((s (slot-value wp 'stream)))
@@ -38,7 +38,7 @@
 	(ironclad:encrypt-in-place (slot-value wp 'stream-cypher-send) b)
 	(log:trace "ENCRYPTED: ~a #x~a" (length b) (bytes-to-hex b)))
       (write-sequence b s)
-      (force-output s)))
+      (when flush (force-output s))))
   (values))
 
 
@@ -275,7 +275,6 @@
      :while (and (= op-code +op-response+)
 		 (> (slot-value wp 'lazy-response-count) 0))
      :do (progn (decf (slot-value wp 'lazy-response-count))
-		(log:debug wp (slot-value wp 'lazy-response-count))
 		(handler-case
 		    (%parse-op-response wp)
 		  (operational-error (e)
@@ -283,11 +282,13 @@
 			  (error-message e)
 			  (error-gds-codes e)
 			  (error-sql-code e))))
-		(recv-int32 wp))))
+		(setf op-code (recv-int32 wp))))
+  (values op-code))
 
 
 (defun wp-op-response (wp)
   (log:debug wp)
+  (force-output (slot-value wp 'stream))
   (let ((op-code (%skip-op-dummy wp)))
     (%skip-lazy-response wp op-code)
     (log:trace op-code)
@@ -665,7 +666,7 @@
 		    (xdr-int32 +op-allocate-statement+)
 		    (xdr-int32 db-handle))))
       (log:trace packet)
-      (send-channel wp packet)))
+      (send-channel wp packet nil)))
   (values))
 
 
@@ -676,7 +677,7 @@
 		  (xdr-int32 stmt-handle)
 		  (xdr-int32 mode))))
     (log:trace packet)
-    (send-channel wp packet))
+    (send-channel wp packet nil))
   (values))
 
 
@@ -823,6 +824,7 @@
 
 
 (defun wp-op-execute (wp stmt-handle trans-handle params)
+  (declare (type (signed-byte 32) stmt-handle trans-handle))
   (log:debug wp stmt-handle trans-handle params)
   (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-execute+)

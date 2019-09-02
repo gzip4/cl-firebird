@@ -313,17 +313,16 @@
 
 
 (defmacro with-statement ((var sql &key explain-plan) &body body)
-  (let ((tmp (gensym))
-	(stmt (gensym "STATEMENT")))
-    `(let* ((,tmp ,sql)
-	    (,stmt (etypecase ,tmp
-		     (statement ,tmp)
-		     (string (prepare ,tmp :explain-plan ,explain-plan))))
-	    (,var ,stmt)
-	    (*statement* ,stmt))
-       (declare (ignorable ,var))
-       (unwind-protect (progn ,@body)
-	 (statement-drop ,stmt)))))
+  (let ((sql! (gensym "SQL")))
+    `(let (,var)
+       (unwind-protect
+	    (let ((,sql! ,sql))
+	      (setf ,var (etypecase ,sql!
+			   (statement ,sql!)
+			   (string (prepare ,sql! :explain-plan ,explain-plan))))
+	      (let ((*statement* ,var))
+		,@body))
+	 (when ,var (statement-drop ,var))))))
 
 
 (defun execute (query &rest params)
