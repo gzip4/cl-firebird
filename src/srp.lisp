@@ -70,8 +70,6 @@ See http://srp.stanford.edu/ for more information.
 
 
 (defparameter *debug* nil)
-(defparameter *debug-print* nil)
-
 (defparameter *DEBUG-PRIVATE-KEY* #x60975527035CF2AD1989806F0407210BC81EDC04E2762A56AFD529DDDA2D4393)
 
 (defconstant +SRP-KEY-SIZE+ 128)
@@ -114,14 +112,14 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 
 
 (defun hash-digest (algo &rest args)
-  (ironclad:digest-sequence
+  (crypto:digest-sequence
    algo
-   (apply #'concatenate '(simple-array (unsigned-byte 8) (*))
-	  (mapcar (lambda (x) (etypecase x
-				((or simple-array vector) x)
-				(integer (long-to-bytes x))))
-		  args))))
-
+   (flex:with-output-to-sequence (s)
+     (loop :for x :in args
+	:do (etypecase x
+	      (sequence (write-sequence x s))
+	      (integer (write-sequence (long-to-bytes x) s)))))))
+   
 
 (defun get-scramble (x y)
   (bytes-to-long (hash-digest :sha1 (pad x) (pad y))))
@@ -139,10 +137,9 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 			    *debug-private-key*
 			    (random (ash 1 +SRP-KEY-SIZE+))))
 	   (public-key (pow% g private-key N)))
-      (when *debug-print*
-	(format *debug-io* "~&a=~a~%A=~a~%"
-		(long-to-hex private-key)
-		(long-to-hex public-key)))
+      (log:trace "a=~a~%A=~a"
+		 (long-to-hex private-key)
+		 (long-to-hex public-key))
       (values public-key private-key))))  ; A a
 
 
@@ -156,10 +153,9 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 	   (kv (mod (* k v) N))
 	   (private-key b)
 	   (public-key (mod (+ kv gb) N)))
-      (when *debug-print*
-	(format *debug-io* "~&b=~a~%B=~a~%"
-		(long-to-hex private-key)
-		(long-to-hex public-key)))
+      (log:trace "b=~a~%B=~a"
+		 (long-to-hex private-key)
+		 (long-to-hex public-key))
       (values public-key private-key))))  ; B b
 
 
@@ -175,17 +171,16 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 	   (aux  (mod (+ a ux) N))
 	   (session-secret (pow% diff aux N))
 	   (K$   (hash-digest :sha1 session-secret)))
-      (when *debug-print*
-	(format *debug-io* "~&B=~a~%" (long-to-hex B$))
-	(format *debug-io* "~&u=~a~%" (long-to-hex u))
-	(format *debug-io* "~&x=~a~%" (long-to-hex x))
-	(format *debug-io* "~&gx=~a~%" (long-to-hex gx))
-	(format *debug-io* "~&kgx=~a~%" (long-to-hex kgx))
-	(format *debug-io* "~&diff=~a~%" (long-to-hex diff))
-	(format *debug-io* "~&ux=~a~%" (long-to-hex ux))
-	(format *debug-io* "~&aux=~a~%" (long-to-hex aux))
-	(format *debug-io* "~&session-secret=~a~%" (long-to-hex session-secret))
-	(format *debug-io* "~&session_key:K=~a~%" (bytes-to-hex K$)))
+      (log:trace "B=~a" (long-to-hex B$))
+      (log:trace "u=~a" (long-to-hex u))
+      (log:trace "x=~a" (long-to-hex x))
+      (log:trace "gx=~a" (long-to-hex gx))
+      (log:trace "kgx=~a" (long-to-hex kgx))
+      (log:trace "diff=~a" (long-to-hex diff))
+      (log:trace "ux=~a" (long-to-hex ux))
+      (log:trace "aux=~a" (long-to-hex aux))
+      (log:trace "session-secret=~a" (long-to-hex session-secret))
+      (log:trace "session_key:K=~a" (bytes-to-hex K$))
       (values K$))))
 
 
@@ -205,9 +200,8 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 	   (A$vu (mod (* A$ vu) N))
 	   (session-secret (pow% A$vu b N))
 	   (K$   (hash-digest :sha1 session-secret)))
-      (when *debug-print*
-	(format *debug-io* "~&server session_secret=~a~%" (long-to-hex session-secret))
-	(format *debug-io* "~&server session hash K=~a~%" (bytes-to-hex K$)))
+      (log:trace "server session_secret=~a" (long-to-hex session-secret))
+      (log:trace "server session hash K=~a" (bytes-to-hex K$))
       (values K$))))
 
 
@@ -217,8 +211,7 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 		  (flex:with-output-to-sequence (s)
 		    (loop for x from 1 to +SRP-SALT-SIZE+
 		       do (write-byte (random 256) s))))))
-    (when *debug-print*
-      (format *debug-io* "~&salt=~a~%" (bytes-to-hex salt)))
+    (log:trace "salt=~a" (bytes-to-hex salt))
     (values salt)))
 
 
@@ -229,21 +222,19 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
     (let ((K$ (client-session user password salt A$ B$ a))
 	  (n1 (bytes-to-long (hash-digest :sha1 N)))
 	  (n2 (bytes-to-long (hash-digest :sha1 g))))
-      (when *debug-print*
-	(format *debug-io* "~&n1-1=~a~%" (long-to-hex n1))
-	(format *debug-io* "~&n2-1=~a~%" (long-to-hex n2)))
+      (log:trace "n1-1=~a" (long-to-hex n1))
+      (log:trace "n2-1=~a" (long-to-hex n2))
       (let* ((n1 (pow% n1 n2 N))
 	     (n2 (bytes-to-long (hash-digest :sha1 user)))
 	     (M$ (hash-digest hash-algo n1 n2 salt A$ B$ K$)))
-      (when *debug-print*
-	(format *debug-io* "~&n1-2=~a~%" (long-to-hex n1))
-	(format *debug-io* "~&n2-2=~a~%" (long-to-hex n2))
-	(format *debug-io* "~&client_proof:M=~a~%" (bytes-to-hex M$)))
-      (values M$ K$)))))
+	(log:trace "n1-2=~a" (long-to-hex n1))
+	(log:trace "n2-2=~a" (long-to-hex n2))
+	(log:trace "client_proof:M=~a" (bytes-to-hex M$))
+	(values M$ K$)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun srp-test ()
+(defun %srp-test ()
   (let ((user (str-to-bytes "SYSDBA"))
 	(password (str-to-bytes "masterkey")))
     (multiple-value-bind (A$ a)
@@ -256,11 +247,11 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 	    (multiple-value-bind (M$ client-key)
 		(client-proof user password salt A$ B$ a :sha1)
 	      (declare (ignorable M$))
-	      (format *debug-io* "1: ~a ~a ~a~%" (equalp client-key server-key) client-key server-key))
+	      (log:debug "1: ~a ~a ~a" (equalp client-key server-key) client-key server-key))
 	    (multiple-value-bind (M$ client-key)
 		(client-proof user password salt A$ B$ a :sha256)
 	      (declare (ignorable M$))
-	      (format *debug-io* "2: ~a ~a ~a~%" (equalp client-key server-key) client-key server-key)))))))
+	      (log:debug "2: ~a ~a ~a" (equalp client-key server-key) client-key server-key)))))))
   (values))
 
 
