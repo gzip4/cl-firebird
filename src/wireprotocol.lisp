@@ -26,7 +26,7 @@
         return r[:nbytes]
 |#
 
-(declaim (inline send-channel recv-channel %recv-int32))
+(declaim (inline send-channel recv-channel recv-int32))
 
 
 (defun send-channel (wp b)
@@ -69,10 +69,8 @@
 	    (values (if (= n nbytes) b (subvec b 0 nbytes))))))))
 
 
-(defun %recv-int32 (wp)
-  ;; XXX: (u)int32 ?
-  (unsigned-to-signed-int
-   (bytes-to-long (recv-channel wp 4))))
+(defun recv-int32 (wp)
+  (bytes-to-int (recv-channel wp 4)))
 
 
 (defun %pack-cnct-param (k v)
@@ -202,19 +200,19 @@
 	(gds-codes nil)
 	(message "")
 	(num-arg 0)
-	(n (%recv-int32 wp)))
+	(n (recv-int32 wp)))
     (loop
        (when (= n +isc-arg-end+) (return))
        (cond
 	 ((= +isc-arg-gds+ n)
-	  (setf gds-code (%recv-int32 wp))
+	  (setf gds-code (recv-int32 wp))
 	  (unless (zerop gds-code)
 	    (pushnew gds-code gds-codes)
 	    (string+= message (gethash gds-code *messages* "@1"))
 	    (setf num-arg 0)))
 
 	 ((= +isc-arg-number+ n)
-	  (let ((num (%recv-int32 wp)))
+	  (let ((num (recv-int32 wp)))
 	    (when (= gds-code 335544436)
 	      (setf sql-code (unsigned-to-signed-int num)))
 	    (incf num-arg)
@@ -223,22 +221,22 @@
 	      (setf message (replace-all message part strnum)))))
 
 	 ((= +isc-arg-string+ n)
-	  (let* ((nbytes (%recv-int32 wp))
+	  (let* ((nbytes (recv-int32 wp))
 		 (s (bytes-to-str (recv-channel wp nbytes t))))
 	    (incf num-arg)
 	    (let ((part (format nil "@~a" num-arg)))
 	      (setf message (replace-all message part s)))))
 
 	 ((= +isc-arg-interpreted+ n)
-	  (let* ((nbytes (%recv-int32 wp))
+	  (let* ((nbytes (recv-int32 wp))
 		 (s (bytes-to-str (recv-channel wp nbytes t))))
 	    (string+= message s)))
 
 	 ((= +isc-arg-sql-state+ n)
-	  (let ((nbytes (%recv-int32 wp)))
+	  (let ((nbytes (recv-int32 wp)))
 	    (recv-channel wp nbytes t))))
 
-       (setf n (%recv-int32 wp))) ; end loop
+       (setf n (recv-int32 wp))) ; end loop
     
     (values gds-codes sql-code message)))
 
@@ -266,7 +264,7 @@
 
 
 (defun %skip-op-dummy (wp)
-  (loop :for b = (%recv-int32 wp)
+  (loop :for b = (recv-int32 wp)
      :while (= b +op-dummy+)
      :do (progn)
      :finally (return b)))
@@ -285,7 +283,7 @@
 			  (error-message e)
 			  (error-gds-codes e)
 			  (error-sql-code e))))
-		(%recv-int32 wp))))
+		(recv-int32 wp))))
 
 
 (defun wp-op-response (wp)
@@ -340,14 +338,14 @@
 
 (defun %wp-op-accept/auth (wp)
   (log:trace wp)
-  (let* ((data-len (%recv-int32 wp))
+  (let* ((data-len (recv-int32 wp))
 	 (data (recv-channel wp data-len t))
-	 (apn (recv-channel wp (%recv-int32 wp) t))
+	 (apn (recv-channel wp (recv-int32 wp) t))
 	 (accept-plugin-name (bytes-to-str apn))
-	 (is-authenticated (%recv-int32 wp))
+	 (is-authenticated (recv-int32 wp))
 	 (hash-algo :sha1))
     (setf (slot-value wp 'accept-plugin-name) accept-plugin-name)
-    (recv-channel wp (%recv-int32 wp)) ; keys
+    (recv-channel wp (recv-int32 wp)) ; keys
     (log:trace data-len data apn accept-plugin-name is-authenticated)
 
     (when (zerop is-authenticated)
@@ -921,7 +919,7 @@
     (loop :for x in xsqlda
        :for i :from 0
        :do (let* ((io-len (xsqlvar-io-length x))
-		  (ln (if (< io-len 0) (%recv-int32 wp) io-len))
+		  (ln (if (< io-len 0) (recv-int32 wp) io-len))
 		  (raw-value (recv-channel wp ln t)))
 	     (log:trace (xsqlvar-aliasname x) raw-value)
 	     (when (equalp #(0 0 0 0) (recv-channel wp 4)) ; not NULL
@@ -935,7 +933,7 @@
        :for i :from 0
        :do (setf (elt r (* 2 i)) (%kw (xsqlvar-aliasname x)))
        :do (let* ((io-len (xsqlvar-io-length x))
-		  (ln (if (< io-len 0) (%recv-int32 wp) io-len))
+		  (ln (if (< io-len 0) (recv-int32 wp) io-len))
 		  (raw-value (recv-channel wp ln t)))
 	     (log:trace (xsqlvar-aliasname x) raw-value)
 	     (when (equalp #(0 0 0 0) (recv-channel wp 4)) ; not NULL
@@ -951,7 +949,7 @@
        :for i :from 0
        :do (when (zerop (logand null-indicator (ash 1 i)))
 	     (let* ((io-len (xsqlvar-io-length x))
-		  (ln (if (< io-len 0) (%recv-int32 wp) io-len))
+		  (ln (if (< io-len 0) (recv-int32 wp) io-len))
 		  (raw-value (recv-channel wp ln t)))
 	       (log:trace (xsqlvar-aliasname x) raw-value)
 	       (setf (elt r i) (xsqlvar-value x raw-value)))))
@@ -966,7 +964,7 @@
        :do (setf (elt r (* 2 i)) (%kw (xsqlvar-aliasname x)))
        :do (when (zerop (logand null-indicator (ash 1 i)))
 	     (let* ((io-len (xsqlvar-io-length x))
-		  (ln (if (< io-len 0) (%recv-int32 wp) io-len))
+		  (ln (if (< io-len 0) (recv-int32 wp) io-len))
 		  (raw-value (recv-channel wp ln t)))
 	       (log:trace (xsqlvar-aliasname x) raw-value)
 	       (setf (elt r (1+ (* 2 i))) (xsqlvar-value x raw-value)))))
@@ -1039,7 +1037,7 @@
 	(%parse-op-response wp))
       (error "op_sql_response: op-code = ~a" op-code))
 
-    (unless (zerop (%recv-int32 wp))
+    (unless (zerop (recv-int32 wp))
       (if (< (protocol-accept-version wp) +protocol-version13+)
 	  (wp-op-fetch-response/v12 wp xsqlda)
 	  (wp-op-fetch-response/v13 wp xsqlda)))))

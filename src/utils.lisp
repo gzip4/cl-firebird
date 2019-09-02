@@ -89,7 +89,8 @@ is replaced with replacement."
 (declaim (inline subvec bytes-to-long bytes-to-long-le
 		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
 		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
-		 str byte-stream byte-stream-output))
+		 str byte-stream byte-stream-output
+		 bytes-to-int bytes-to-int-le))
 
 (defun subvec (v offset length)
   (declare (type vector v) (type fixnum offset length))
@@ -186,6 +187,15 @@ is replaced with replacement."
     (if (zerop scale)
 	signed
 	(/ signed (expt 10 (abs scale))))))
+
+(defun bytes-to-int (s)
+  (unsigned-to-signed-int
+   (octets-to-integer s :big-endian t)))
+
+(defun bytes-to-int-le (s)
+  (unsigned-to-signed-int
+   (octets-to-integer s :big-endian nil)))
+
 
 
 (defmacro string+= (v &rest args)
