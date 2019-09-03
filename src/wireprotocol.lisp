@@ -259,10 +259,10 @@
 	 ((= +isc-arg-number+ n)
 	  (let ((num (recv-int32 wp)))
 	    (when (= gds-code 335544436)
-	      (setf sql-code (unsigned-to-signed-int num)))
+	      (setf sql-code num))
 	    (incf num-arg)
 	    (let ((part (format nil "@~a" num-arg))
-		  (strnum (format nil "~a" (unsigned-to-signed-int num))))
+		  (strnum (format nil "~a" num)))
 	      (setf message (replace-all message part strnum)))))
 
 	 ((= +isc-arg-string+ n)
