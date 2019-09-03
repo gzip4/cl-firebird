@@ -112,15 +112,17 @@ https://www.geeksforgeeks.org/modular-exponentiation-power-in-modular-arithmetic
 
 
 (defun hash-digest (algo &rest args)
-  (crypto:digest-sequence
-   algo
-   (coerce
-    (flex:with-output-to-sequence (s)
-      (loop :for x :in args
-	 :do (etypecase x
-	       (sequence (write-sequence x s))
-	       (integer (write-sequence (long-to-bytes x) s)))))
-    '(simple-array (unsigned-byte 8)))))
+  (let ((seq (flex:with-output-to-sequence (s)
+	       (loop :for x :in args
+		  :do (etypecase x
+			(sequence (write-sequence x s))
+			(integer (write-sequence (long-to-bytes x) s)))))))
+    (crypto:digest-sequence
+     algo
+     #+(or cmu sbcl) seq
+     #-(or cmu sbcl) (make-array (length seq)
+				 :element-type '(unsigned-byte 8)
+				 :initial-contents seq))))
 
 
 (defun get-scramble (x y)
