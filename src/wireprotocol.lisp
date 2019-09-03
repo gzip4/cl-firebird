@@ -69,11 +69,24 @@
 	      (log:trace "DECRYPTED: ~a ~a~%#x~a"
 	    		 (length b) b (bytes-to-hex b)))
 	    (incf (slot-value wp 'bytes-in) n)
+	    ;; XXX: what's the best way to cut padding off?
 	    (values (if (= n nbytes) b (subseq b 0 nbytes))))))))
 
 
 (defun recv-int32 (wp)
-  (bytes-to-int (recv-channel wp 4)))
+  (declare (optimize (speed 2) (space 0) (debug 0)))
+  (with-slots (buffer stream stream-cypher-recv) wp
+    (let ((b (subseq! buffer 0 4))) ; displace buffer
+      (when (/= 4 (read-sequence b stream))
+	(error "Unexpected end of stream: ~a" stream))
+      (log:trace "RAW: ~a ~a~%#x~a" 4 b (bytes-to-hex b))
+      (when stream-cypher-recv
+	;; XXX: evil ironclad forces us to copy-copy-copy...
+	(setf b (make-array 4 :initial-contents b :element-type 'nibbles:octet))
+	(crypto:decrypt-in-place stream-cypher-recv b)
+	(log:trace "DECRYPTED: ~a ~a~%#x~a" 4 b (bytes-to-hex b)))
+      (incf (slot-value wp 'bytes-in) 4)
+      (values (bytes-to-int b)))))
 
 
 (defun %pack-cnct-param (k v)
