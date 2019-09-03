@@ -108,16 +108,11 @@
     ((zerop (length info-requests))
      (setf info-requests (list +isc-info-end+))))
   (let* ((len (length info-requests))
-	 (add-end (/= (elt info-requests (1- len)) +isc-info-end+))
-	 (ir (make-array len
-			 :element-type '(unsigned-byte 8)
-			 :adjustable add-end
-			 :fill-pointer add-end
-			 :initial-contents info-requests)))
-    (when add-end
-      (vector-push-extend +isc-info-end+ ir)
-      (setf ir (seq-to-bytes ir)))
-    (values ir)))
+	 (add-end (/= (elt info-requests (1- len)) +isc-info-end+)))
+    (values
+     (with-byte-stream (bs)
+       (append-bytes bs info-requests)
+       (when add-end (append-bytes bs +isc-info-end+))))))
 
 
 (defun %parse-trans-info (buf ireq)
@@ -134,6 +129,17 @@
        (incf i (+ 3 l))
        (incf ir)) ; loop
     (values r)))
+
+
+(defvar +isc-info-tra-all+
+  (list
+   +isc-info-tra-id+
+   +isc-info-tra-oldest-interesting+
+   +isc-info-tra-oldest-snapshot+
+   +isc-info-tra-oldest-active+
+   +isc-info-tra-isolation+
+   +isc-info-tra-access+
+   +isc-info-tra-lock-timeout+))
 
 
 (defun transaction-info (trans info-requests)
