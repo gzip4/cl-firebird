@@ -173,15 +173,16 @@
       (values cnct-params))))
 
 
-(defun %encode-proto (version arch-type min max weigth)
-  (when (= 1 (ldb (byte 1 15) version))
-    (setf version (logior #xffff0000 version)))
-  (with-byte-stream (p)
-    (nibbles:write-ub32/be version p)
-    (nibbles:write-ub32/be arch-type p)
-    (nibbles:write-ub32/be min p)
-    (nibbles:write-ub32/be max p)
-    (nibbles:write-ub32/be weigth p)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %encode-proto (version arch-type min max weigth)
+    (when (= 1 (ldb (byte 1 15) version))
+      (setf version (logior #xffff0000 version)))
+    (with-byte-stream (p)
+      (nibbles:write-ub32/be version p)
+      (nibbles:write-ub32/be arch-type p)
+      (nibbles:write-ub32/be min p)
+      (nibbles:write-ub32/be max p)
+      (nibbles:write-ub32/be weigth p))))
 
 
 (defparameter +protocols+
