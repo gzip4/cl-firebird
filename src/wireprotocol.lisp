@@ -51,7 +51,7 @@
 	  (when (and word-alignment (not (zerop pad))) (incf n (- 4 pad)))
 	  (let ((b (if (> n (length buffer))
 		       (make-array n :element-type 'nibbles:octet)
-		       (subvec buffer 0 n)))) ; displace buffer
+		       (subseq! buffer 0 n)))) ; displace buffer
 	    #+nil
 	    (let ((s (usocket:wait-for-input (slot-value wp 'socket) :timeout 1)))
 	      (log:info s))
@@ -59,14 +59,15 @@
 	    ;; XXX: usocket:wait-for-input !!!
 	    (when (/= n (read-sequence b stream))
 	      (error "Unexpected end of stream: ~a" stream))
-	    (setf b (copy-seq b)) ; must copy, because next call destructs buffer
-	    (log:trace "RAW: ~a ~a~%#x~a ~a"
-	  	       (length b) b (bytes-to-hex b) (bytes-to-long b))
+	    ;; must copy, because next call destructs buffer
+	    (setf b (make-array n :initial-contents b :element-type 'nibbles:octet))
+	    (log:trace "RAW: ~a ~a~%#x~a"
+	  	       (length b) b (bytes-to-hex b))
 	    (when stream-cypher-recv
 	      (crypto:decrypt-in-place stream-cypher-recv b)
-	      (log:trace "DECRYPTED: ~a ~a~%#x~a ~a"
-	    		 (length b) b (bytes-to-hex b) (bytes-to-long b)))
-	    (values (if (= n nbytes) b (subvec b 0 nbytes))))))))
+	      (log:trace "DECRYPTED: ~a ~a~%#x~a"
+	    		 (length b) b (bytes-to-hex b)))
+	    (values (if (= n nbytes) b (subseq b 0 nbytes))))))))
 
 
 (defun recv-int32 (wp)
@@ -112,9 +113,14 @@
   #+os-windows(%my-getenv "USERNAME" "user"))
 
 
+(defun crypt-password (password)
+  (subvec (crypt:crypt password +legacy-password-salt+) 0 2))
+
+
 (defun wp-uid (wp auth-plugin wire-crypt)
   (log:trace wp)
   (let ((auth-plugin-list "Srp256,Srp,Legacy_Auth")
+	(login (slot-value wp 'user))
 	(user (%get-username))
 	(hostname (%get-hostname))
 	(specific-data nil)
@@ -126,26 +132,23 @@
 	 (setf (slot-value wp 'client-public-key) A$
 	       (slot-value wp 'client-private-key) a
 	       specific-data (long-to-hex A$))))
-      ((member auth-plugin '(:Legacy-Auth :legacy))
+      ((member auth-plugin '(:legacy-auth :legacy))
        (setf auth-plugin "legacy_auth")
-       (setf specific-data
-	     (subseq
-	      (crypt:crypt (slot-value wp 'password)
-			   +legacy-password-salt+)
-	      2)))
+       (setf specific-data (crypt-password (slot-value wp 'password))))
       (t (error 'operational-error
 		:msg (format nil "Unknown auth plugin name '~a'" auth-plugin))))
-    
-    (setf (slot-value wp 'plugin-name) (string-capitalize auth-plugin))
-    (setf (slot-value wp 'plugin-list) auth-plugin-list)
+
+    (setf auth-plugin (string-capitalize auth-plugin))
+    (with-slots (plugin-name plugin-list plugin-list*) wp
+      (setf plugin-name auth-plugin
+	    plugin-list auth-plugin-list
+	    plugin-list* (list :srp256 :srp :legacy-auth)))
     (setf client-crypt (if wire-crypt #(1 0 0 0) #(0 0 0 0)))
 
-    (setf (slot-value wp 'plugin-list*) (list :srp256 :srp :legacy-auth))
-
     (let ((cnct-params
-	   (make-bytes (%pack-cnct-param +cnct-login+         (str-to-bytes (slot-value wp 'user)))
-		       (%pack-cnct-param +cnct-plugin-name+   (str-to-bytes (slot-value wp 'plugin-name)))
-		       (%pack-cnct-param +cnct-plugin-list+   (str-to-bytes (slot-value wp 'plugin-list)))
+	   (make-bytes (%pack-cnct-param +cnct-login+         (str-to-bytes login))
+		       (%pack-cnct-param +cnct-plugin-name+   (str-to-bytes auth-plugin))
+		       (%pack-cnct-param +cnct-plugin-list+   (str-to-bytes auth-plugin-list))
 		       (%pack-cnct-param +cnct-specific-data+ (str-to-bytes specific-data))
 		       (%pack-cnct-param +cnct-client-crypt+  client-crypt)
 		       (%pack-cnct-param +cnct-user+          (str-to-bytes user))
@@ -188,6 +191,33 @@
 	   (xdr-int32 (length +protocols+))
 	   (xdr-octets (wp-uid wp auth-plugin wire-crypt))
 	   (write-sequence (apply #'make-bytes +protocols+) s))))
+    (log:trace packet)
+    (send-channel wp packet))
+  (values))
+
+
+(defun wp-op-connect/old (wp)
+  (log:debug wp)
+  (let* ((login (slot-value wp 'user))
+	 (user (%get-username))
+	 (hostname (%get-hostname))
+	 (specific-data (crypt-password (slot-value wp 'password)))
+	 (cnct-params
+	  (make-bytes (%pack-cnct-param +cnct-login+         (str-to-bytes login))
+		      (%pack-cnct-param +cnct-specific-data+ (str-to-bytes specific-data))
+		      (%pack-cnct-param +cnct-user+          (str-to-bytes user))
+		      (%pack-cnct-param +cnct-host+          (str-to-bytes hostname))
+		      (%pack-cnct-param +cnct-user-verification+ #())))
+	 (packet
+	  (with-byte-stream (s)
+	    (xdr-int32 +op-connect+)
+	    (xdr-int32 +op-attach+)
+	    (xdr-int32 +connect-version2+)
+	    (xdr-int32 +arch-generic+)
+	    (xdr-string (or (slot-value wp 'filename) "") :external-format :latin1)
+	    (xdr-int32 1)
+	    (xdr-octets cnct-params)
+	    (write-sequence #.(%encode-proto +protocol-version10+ 1 2 3 2) s))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -244,9 +274,9 @@
 (defun %parse-op-response (wp)
   ;;(log:debug wp)
   (let* ((b (recv-channel wp 16))
-	 (h (bytes-to-long (subseq b 0 4)))
-	 (oid (subseq b 4 12))
-	 (buf-len (bytes-to-long (subseq b 12)))
+	 (h (bytes-to-long (subseq! b 0 4)))
+	 (oid (subseq! b 4 12))
+	 (buf-len (bytes-to-long (subseq! b 12)))
 	 (buf (recv-channel wp buf-len t)))
     (multiple-value-bind (gds-codes sql-code message)
 	(%parse-status-vector wp)
@@ -383,9 +413,7 @@
 	((string= "Legacy_Auth" accept-plugin-name)
 	 ;; XXX: never be here, maybe unneeded
 	 (setf (slot-value wp 'auth-data)
-	       (subseq (crypt:crypt (slot-value wp 'password)
-				    +legacy-password-salt+)
-		       2)))
+	       (crypt-password (slot-value wp 'password))))
 	(t
 	 (error 'operational-error
 		:msg (format nil "Unknown auth plugin: ~a" accept-plugin-name))))))
@@ -407,12 +435,11 @@
 		   accept-type
 		   lazy-response-count)
 	  wp
-	(setf accept-version      (bytes-to-long (subseq b 2 4))
-	      accept-architecture (bytes-to-long (subseq b 4 8))
-	      accept-type         (bytes-to-long (subseq b 8))
+	(setf accept-version      (bytes-to-long (subseq! b 2 4))
+	      accept-architecture (bytes-to-long (subseq! b 4 8))
+	      accept-type         (bytes-to-long (subseq! b 8))
 	      lazy-response-count 0)))
 
-    (log:trace op-code)
     (setf (slot-value wp 'auth-data) nil)
     (if (or (= op-code +op-cond-accept+)
 	    (= op-code +op-accept-data+))
@@ -445,11 +472,7 @@
       (if (= (protocol-accept-version wp) +protocol-version10+)
 	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
 	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes
-		      (subseq
-		       (crypt:crypt (slot-value wp 'password)
-				    +legacy-password-salt+)
-		       2))))
+	  (let ((pwd (str-to-bytes (crypt-password (slot-value wp 'password)))))
 	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
     (when (slot-value wp 'role)
       (let ((rn (str-to-bytes (slot-value wp 'role))))
@@ -507,11 +530,7 @@
       (if (= (protocol-accept-version wp) +protocol-version10+)
 	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
 	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes
-		      (subseq
-		       (crypt:crypt (slot-value wp 'password)
-				    +legacy-password-salt+)
-		       2))))
+	  (let ((pwd (str-to-bytes (crypt-password (slot-value wp 'password)))))
 	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
     (when (slot-value wp 'role)
       (let ((rn (str-to-bytes (slot-value wp 'role))))

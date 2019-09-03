@@ -7,6 +7,7 @@
   (:export #:integrity-error
 	   #:operational-error
 	   #:connect
+	   #:connect/old
 	   #:disconnect
 	   #:disconnected-p
 	   #:db-info
@@ -18,24 +19,54 @@
 	   #:fetch
 	   #:fetch1
 	   #:fetch!
-	   #:connect*
-	   #:disconnect*
-	   #:disconnected-p*
-	   #:db-info*
-	   #:drop-database*
 	   #:commit
 	   #:rollback
 	   #:savepoint
 	   #:rollback-to-savepoint
-	   #:transaction-info
 	   #:start-transaction
 	   #:immediate
 	   #:with-connection
+	   #:with-connection/old
 	   #:with-transaction
 	   #:with-transaction/ac
 	   #:with-statement
 	   #:row-count
 	   #:blob-value
+
+	   #:connect*
+	   #:disconnect*
+	   #:disconnected-p*
+	   #:db-info*
+	   #:drop-database*
+
+	   ;; low level
+	   #:make-statement
+	   #:statement-prepare
+	   #:statement-execute
+	   #:statement-execute-list
+	   #:statement-make-fetcher
+	   #:statement-fetch-one
+	   #:statement-fetch-single
+	   #:statement-fetch-all
+	   #:statement-row-count
+	   #:statement-close
+	   #:statement-drop
+	   #:transaction-savepoint
+	   #:transaction-commit
+	   #:transaction-commit-retaining
+	   #:transaction-rollback-to-savepoint
+	   #:transaction-rollback
+	   #:transaction-rollback-retaining
+	   #:transaction-info
+	   #:execute-immediate
+
+	   ;; classes
+	   #:connection
+	   #:transaction
+	   #:statement
+	   #:blob
+
+	   ;; specials
 	   #:*connection*
 	   #:*transaction*
 	   #:*statement*))

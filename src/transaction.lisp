@@ -162,7 +162,6 @@
 
 
 (defun execute-immediate (query trans)
-  ;;(check-trans-handle trans)
   (wp-op-exec-immediate (connection trans)
                         (object-handle trans)
                         query)

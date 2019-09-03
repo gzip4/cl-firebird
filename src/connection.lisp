@@ -30,7 +30,6 @@
 		  isolation-level use-unicode (auth-plugin-name :srp)
 		  (wire-crypt t) create-new timezone)
   (declare (ignorable is-services))
-  (assert (member page-size '(2048 4096 8192 16384)))
   (let ((conn (make-instance 'connection)))
     (if dsn
 	(multiple-value-bind (h p f)
@@ -60,6 +59,52 @@
     (let ((sock (%socket-connect conn)))
       (setf (slot-value conn 'stream) (usocket:socket-stream sock))
       (wp-op-connect conn auth-plugin-name wire-crypt)
+      (handler-case
+	  (wp-op-accept conn)
+	(operational-error (e)
+	  (usocket:socket-close sock)
+	  (setf (slot-value conn 'socket) nil
+		(slot-value conn 'stream) nil)
+	  (error e))))
+    (cond
+      (create-new (wp-op-create conn page-size))
+      (is-services (error "is-services"))
+      (t (wp-op-attach conn)))
+    (setf (slot-value conn 'db-handle) (wp-op-response conn))
+    (values conn)))
+
+
+(defun connect/old (&key dsn user password role host database
+		      (charset +default-charset+) (port 3050)
+		      (page-size 4096) is-services
+		      isolation-level create-new)
+  (declare (ignorable is-services))
+  (let ((conn (make-instance 'connection)))
+    (if dsn
+	(multiple-value-bind (h p f)
+	    (%parse-dsn dsn)
+	  (setf (slot-value conn 'hostname) (or h host)
+		(slot-value conn 'filename) (or f database)
+		port (or p port)))
+	(setf (slot-value conn 'hostname) host
+	      (slot-value conn 'filename) database))
+    (unless (slot-value conn 'hostname)
+      (setf (slot-value conn 'hostname) "localhost"))
+    (setf (slot-value conn 'port) port
+	  (slot-value conn 'user) user
+	  (slot-value conn 'password) password
+	  (slot-value conn 'role) role
+	  (slot-value conn 'charset) charset
+	  (slot-value conn 'page-size) page-size
+	  (slot-value conn 'last-event-id) 0
+	  (slot-value conn 'timeout) nil
+	  (slot-value conn 'auth-plugin-name) nil
+	  (slot-value conn 'isolation-level) (if (null isolation-level)
+						 +isolation-level-read-commited+
+						 (floor isolation-level)))
+    (let ((sock (%socket-connect conn)))
+      (setf (slot-value conn 'stream) (usocket:socket-stream sock))
+      (wp-op-connect/old conn)
       (handler-case
 	  (wp-op-accept conn)
 	(operational-error (e)
@@ -269,20 +314,30 @@
 	 (disconnect ,conn!)))))
 
 
+(defmacro with-connection/old ((var &rest args
+				    &key dsn user password role host database
+				    &allow-other-keys)
+			       &body body)
+  (declare (ignorable dsn user password role host database))
+  `(let (,var)
+     (unwind-protect
+	  (progn
+	    (setf ,var (funcall #'connect ,@args))
+	    (let ((*connection* ,var))
+	      ,@body))
+       (when ,var (disconnect ,var)))))
+
+
 (defun immediate (sql &optional trans)
   (execute-immediate sql (or trans *transaction*)))
 
 
-(defmacro with-transaction ((&optional conn var) &body body)
+(defmacro with-transaction ((&optional conn) &body body)
   (let* ((conn! (gensym "CONNECTION"))
-	 (tr! (gensym "TRANSACTION"))
-	 (var! (when var (list (list var tr!))))
-	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
+	 (tr! (gensym "TRANSACTION")))
     `(let* ((,conn! (or ,conn *connection*))
 	    (,tr! (start-transaction ,conn! :auto-commit nil))
-	    (*transaction* ,tr!)
-	    ,@var!)
-       ,var-decl!
+	    (*transaction* ,tr!))
        (unwind-protect
             (multiple-value-prog1
 		(progn ,@body)
@@ -290,16 +345,12 @@
 	 (transaction-rollback ,tr!)))))
 
 
-(defmacro with-transaction/ac ((&optional conn var) &body body)
+(defmacro with-transaction/ac ((&optional conn) &body body)
   (let* ((conn! (gensym "CONNECTION"))
-	 (tr! (gensym "TRANSACTION"))
-	 (var! (when var (list (list var tr!))))
-	 (var-decl! (when var (list 'declare (list 'ignorable var)))))
+	 (tr! (gensym "TRANSACTION")))
     `(let* ((,conn! (or ,conn *connection*))
 	    (,tr! (start-transaction ,conn! :auto-commit t))
-	    (*transaction* ,tr!)
-	    ,@var!)
-       ,var-decl!
+	    (*transaction* ,tr!))
        (unwind-protect
             (multiple-value-prog1
 		(progn ,@body)

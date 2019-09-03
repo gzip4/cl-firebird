@@ -97,13 +97,26 @@ is replaced with replacement."
      do (incf start size)))
 
 
-(declaim (inline subvec bytes-to-long bytes-to-long-le
+(declaim (inline subseq! subvec bytes-to-long bytes-to-long-le
 		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
 		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
 		 str bytes-to-int bytes-to-int-le))
 
-(defun subvec (v offset length)
-  (declare (type vector v) (type fixnum offset length))
+(defun subseq! (sequence start &optional end)
+  "Vectors are displaced to sequence, other just subseq."
+  (declare (type sequence sequence)
+	   (type fixnum start)
+	   (type (or null fixnum) end))
+  (typecase sequence
+    (vector (make-array (- (or end (length sequence)) start)
+			:element-type (array-element-type sequence)
+			:displaced-to sequence
+			:displaced-index-offset start))
+    (t (subseq sequence start end))))
+
+(defun subvec (v offset &optional length)
+  (declare (type vector v))
+  (unless length (setf length (- (length v) offset)))
   (make-array length
 	      :element-type (array-element-type v)
 	      :displaced-to v
