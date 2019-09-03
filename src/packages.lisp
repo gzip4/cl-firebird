@@ -32,6 +32,8 @@
 	   #:with-statement
 	   #:row-count
 	   #:blob-value
+	   #:isolation-level
+	   #:connection-use-unicode
 
 	   #:connect*
 	   #:disconnect*
@@ -59,6 +61,17 @@
 	   #:transaction-rollback-retaining
 	   #:transaction-info
 	   #:execute-immediate
+	   #:protocol-bytes-in
+	   #:protocol-bytes-out
+	   #:protocol-start-time
+	   #:protocol-accept-plugin-name
+	   #:protocol-accept-version
+	   #:protocol-accept-architecture
+	   #:protocol-accept-type
+	   #:connection-hostname
+	   #:connection-port
+	   #:connection-timeout
+	   #:connection-page-size
 
 	   ;; classes
 	   #:connection
