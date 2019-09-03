@@ -297,68 +297,43 @@ blr_end = 255
 (defun %parse-select-items (buf xsqlda connection)
   (declare (ignorable connection))
   (let ((i 0) (index 0) (item (elt buf 0)))
-    (loop
-       (unless (/= item +isc-info-end+) (return -1))
-       (case item
-	 (#.+isc-info-sql-sqlda-seq+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf index (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l))))
-	    (setf (elt xsqlda (1- index))
-		  (make-instance 'xsqlvar
-				 :use-unicode (connection-use-unicode connection)))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-type+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'sqltype)
-		  (logand (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l)))
-			  (lognot 1)))	; clear bit 0
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-sub-type+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'sqlsubtype)
-		  (unsigned-to-signed-int (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l)))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-scale+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'sqlscale)
-		  (unsigned-to-signed-int (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l)))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-length+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'sqllen)
-		  (unsigned-to-signed-int (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l)))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-null-ind+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'null-ok)
-		  (> (bytes-to-long-le (subseq buf (+ i 3) (+ i 3 l))) 0))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-field+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'fieldname)
-		  (bytes-to-str (subseq buf (+ i 3) (+ i 3 l))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-relation+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'relname)
-		  (bytes-to-str (subseq buf (+ i 3) (+ i 3 l))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-owner+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'ownname)
-		  (bytes-to-str (subseq buf (+ i 3) (+ i 3 l))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-sql-alias+
-	  (let ((l (bytes-to-long-le (subseq buf (+ i 1) (+ i 3)))))
-	    (setf (slot-value (elt xsqlda (1- index)) 'aliasname)
-		  (bytes-to-str (subseq buf (+ i 3) (+ i 3 l))))
-	    (incf i (+ 3 l))))
-	 (#.+isc-info-truncated+ (return index)) ; return next index
-	 (#.+isc-info-sql-describe-end+ (incf i))
-	 (otherwise
-	  (log:warn "Invalid item: ~a ~a" (elt buf i) i)
-	  (incf i)))
-       (setf item (elt buf i)))))
+    (flet ((get-item (&optional x)
+	     (let* ((l (bytes-to-long-le (subseq! buf (+ i 1) (+ i 3))))
+		    (item (if x (bytes-to-str (subseq! buf (+ i 3) (+ i 3 l)))
+			      (bytes-to-long-le (subseq! buf (+ i 3) (+ i 3 l))))))
+	       (incf i (+ 3 l)) item)))
+      (macrolet ((with-slots! ((&rest slots) obj &body body)
+		     (let ((sl (loop :for s :in slots
+				  :collect (list s (list 'slot-value obj (list 'quote s))))))
+		       `(symbol-macrolet ,sl ,@body))))
+	(loop
+	   (unless (/= item +isc-info-end+) (return -1))
+	   (with-slots! (sqltype sqlsubtype sqlscale sqllen
+				 null-ok fieldname relname
+				 ownname aliasname)
+	       (elt xsqlda (1- index))
+	     (case item
+	       (#.+isc-info-sql-sqlda-seq+
+		(setf index (get-item))
+		(let ((use-unicode (connection-use-unicode connection)))
+		  (setf (elt xsqlda (1- index))
+			(make-instance 'xsqlvar :use-unicode use-unicode))))
+	       (#.+isc-info-sql-type+
+		(setf sqltype (logand (get-item) (lognot 1)))) ; clear bit 0
+	       (#.+isc-info-sql-sub-type+ (setf sqlsubtype (get-item)))
+	       (#.+isc-info-sql-scale+    (setf sqlscale (unsigned-to-signed-int (get-item))))
+	       (#.+isc-info-sql-length+   (setf sqllen (get-item)))
+	       (#.+isc-info-sql-null-ind+ (setf null-ok (> (get-item) 0)))
+	       (#.+isc-info-sql-field+    (setf fieldname (get-item :str)))
+	       (#.+isc-info-sql-relation+ (setf relname (get-item :str)))
+	       (#.+isc-info-sql-owner+    (setf ownname (get-item :str)))
+	       (#.+isc-info-sql-alias+    (setf aliasname (get-item :str)))
+	       (#.+isc-info-truncated+    (return index)) ; return next index
+	       (#.+isc-info-sql-describe-end+ (incf i))
+	       (otherwise
+		(log:warn "Invalid item: ~a ~a" (elt buf i) i)
+		(incf i))))
+	   (setf item (elt buf i))))))) ; loop
 
 
 (defun xsqlvar-parse-xsqlda (buf connection stmt-handle)
@@ -366,16 +341,16 @@ blr_end = 255
     (loop
        (unless (< i buflen) (return))
        (cond
-	 ((equalp (subseq buf i (+ 3 i)) #(#.+isc-info-sql-stmt-type+ 4 0))
-	  (setf stmt-type (bytes-to-long-le (subseq buf (+ i 3) (+ i 7))))
+	 ((equalp (subseq! buf i (+ 3 i)) #(#.+isc-info-sql-stmt-type+ 4 0))
+	  (setf stmt-type (bytes-to-long-le (subseq! buf (+ i 3) (+ i 7))))
 	  (incf i 7))
-	 ((equalp (subseq buf i (+ 2 i)) #(#.+isc-info-sql-select+ #.+isc-info-sql-describe-vars+))
+	 ((equalp (subseq! buf i (+ 2 i)) #(#.+isc-info-sql-select+ #.+isc-info-sql-describe-vars+))
 	  (incf i 2)
-	  (setf l (bytes-to-long-le (subseq buf i (+ i 2))))
+	  (setf l (bytes-to-long-le (subseq! buf i (+ i 2))))
 	  (incf i 2)
-	  (setf col-len (bytes-to-long-le (subseq buf i (+ i l))))
+	  (setf col-len (bytes-to-long-le (subseq! buf i (+ i l))))
 	  (setf xsqlda (make-list col-len))
-	  (setf next-index (%parse-select-items (subseq buf (+ i l)) xsqlda connection))
+	  (setf next-index (%parse-select-items (subseq! buf (+ i l)) xsqlda connection))
 	  (loop
 	     (unless (> next-index 0) (return))
 	     (break "xsqlvar-parse-xsqlda")
@@ -386,10 +361,10 @@ blr_end = 255
 	     (multiple-value-bind (h oid buf)
 		 (wp-op-response connection)
 	       (declare (ignore h oid))
-	       (assert (equalp (subseq buf 0 2) #(4 7)))
-	       (setf l (bytes-to-long-le (subseq buf 2 4)))
-	       (assert (= (bytes-to-long-le (subseq buf 4 (+ 4 l))) col-len))
-	       (setf next-index (%parse-select-items (subseq buf (+ 4 l)) xsqlda connection)))))
+	       (assert (equalp (subseq! buf 0 2) #(4 7)))
+	       (setf l (bytes-to-long-le (subseq! buf 2 4)))
+	       (assert (= (bytes-to-long-le (subseq! buf 4 (+ 4 l))) col-len))
+	       (setf next-index (%parse-select-items (subseq! buf (+ 4 l)) xsqlda connection)))))
 	 (t (return))))
     (values stmt-type xsqlda)))
 
