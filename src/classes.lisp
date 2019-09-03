@@ -23,6 +23,7 @@
    (stream-cypher-send :initform nil)
    (bytes-in :initform 0 :reader protocol-bytes-in)
    (bytes-out :initform 0 :reader protocol-bytes-out)
+   (start-time :initform (get-universal-time) :reader protocol-start-time)
    (auth-data)
    (accept-plugin-name :reader protocol-accept-plugin-name)
    (accept-version :reader protocol-accept-version)
