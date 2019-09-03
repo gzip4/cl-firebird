@@ -115,8 +115,8 @@
 (defun wp-uid (wp auth-plugin wire-crypt)
   (log:trace wp)
   (let ((auth-plugin-list "Srp256,Srp,Legacy_Auth")
-	(user (%get-hostname))
-	(hostname (%get-username))
+	(user (%get-username))
+	(hostname (%get-hostname))
 	(specific-data nil)
 	(client-crypt nil))
     (cond
