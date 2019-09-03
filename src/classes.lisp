@@ -21,6 +21,8 @@
    (stream)
    (stream-cypher-recv :initform nil)
    (stream-cypher-send :initform nil)
+   (bytes-in :initform 0 :reader protocol-bytes-in)
+   (bytes-out :initform 0 :reader protocol-bytes-out)
    (auth-data)
    (accept-plugin-name :reader protocol-accept-plugin-name)
    (accept-version :reader protocol-accept-version)

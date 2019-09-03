@@ -38,6 +38,7 @@
 	(ironclad:encrypt-in-place (slot-value wp 'stream-cypher-send) b)
 	(log:trace "ENCRYPTED: ~a #x~a" (length b) (bytes-to-hex b)))
       (write-sequence b s)
+      (incf (slot-value wp 'bytes-out) (length b))
       (when flush (force-output s))))
   (values))
 
@@ -67,6 +68,7 @@
 	      (crypto:decrypt-in-place stream-cypher-recv b)
 	      (log:trace "DECRYPTED: ~a ~a~%#x~a"
 	    		 (length b) b (bytes-to-hex b)))
+	    (incf (slot-value wp 'bytes-in) n)
 	    (values (if (= n nbytes) b (subseq b 0 nbytes))))))))
 
 
