@@ -295,7 +295,6 @@ blr_end = 255
 
 
 (defun %parse-select-items (buf xsqlda connection)
-  (declare (ignorable connection))
   (let ((i 0) (index 0) (item (elt buf 0)))
     (flet ((get-item (&optional x)
 	     (let* ((l (bytes-to-long-le (subseq! buf (+ i 1) (+ i 3))))
@@ -321,13 +320,13 @@ blr_end = 255
 	       (#.+isc-info-sql-type+
 		(setf sqltype (logand (get-item) (lognot 1)))) ; clear bit 0
 	       (#.+isc-info-sql-sub-type+ (setf sqlsubtype (get-item)))
-	       (#.+isc-info-sql-scale+    (setf sqlscale (unsigned-to-signed-int (get-item))))
-	       (#.+isc-info-sql-length+   (setf sqllen (get-item)))
-	       (#.+isc-info-sql-null-ind+ (setf null-ok (> (get-item) 0)))
-	       (#.+isc-info-sql-field+    (setf fieldname (get-item :str)))
-	       (#.+isc-info-sql-relation+ (setf relname (get-item :str)))
-	       (#.+isc-info-sql-owner+    (setf ownname (get-item :str)))
-	       (#.+isc-info-sql-alias+    (setf aliasname (get-item :str)))
+	       (#.+isc-info-sql-scale+    (setf sqlscale   (unsigned-to-signed-int (get-item))))
+	       (#.+isc-info-sql-length+   (setf sqllen     (get-item)))
+	       (#.+isc-info-sql-null-ind+ (setf null-ok    (> (get-item) 0)))
+	       (#.+isc-info-sql-field+    (setf fieldname  (get-item :str)))
+	       (#.+isc-info-sql-relation+ (setf relname    (get-item :str)))
+	       (#.+isc-info-sql-owner+    (setf ownname    (get-item :str)))
+	       (#.+isc-info-sql-alias+    (setf aliasname  (get-item :str)))
 	       (#.+isc-info-truncated+    (return index)) ; return next index
 	       (#.+isc-info-sql-describe-end+ (incf i))
 	       (otherwise
