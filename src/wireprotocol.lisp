@@ -74,7 +74,6 @@
 
 
 (defun recv-int32 (wp)
-  (declare (optimize (speed 2) (space 0) (debug 0)))
   (with-slots (buffer stream stream-cypher-recv) wp
     (let ((b (subseq! buffer 0 4))) ; displace buffer
       (when (/= 4 (read-sequence b stream))
