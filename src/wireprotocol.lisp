@@ -124,7 +124,7 @@
 
 
 (defun crypt-password (password)
-  (subvec (crypt:crypt password +legacy-password-salt+) 0 2))
+  (subseq! (crypt:crypt password +legacy-password-salt+) 2))
 
 
 (defun wp-uid (wp auth-plugin wire-crypt)

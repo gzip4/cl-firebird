@@ -5,6 +5,10 @@
 (in-package #:cl-firebird)
 
 (defun octets-to-integer (octet-vec &key (start 0) end (big-endian t) n-bits)
+  (when (typep octet-vec '(simple-array (unsigned-byte 8)))
+    (return-from octets-to-integer
+      (crypto:octets-to-integer octet-vec :start start :end end
+				:big-endian big-endian :n-bits n-bits)))
   (let ((end (or end (length octet-vec))))
     (multiple-value-bind (n-bits n-bytes)
         (let ((size (- end start)))
@@ -62,6 +66,7 @@ the element-type of the returned string."
                   (aref hexdigits (ldb (byte 4 0) byte))))
        finally (return string))))
 
+
 (defun hex-string-to-byte-array (string &key (start 0) (end nil))
   "Parses a substring of STRING delimited by START and END of
 hexadecimal digits into a byte array."
@@ -80,6 +85,7 @@ hexadecimal digits into a byte array."
                      (+ (* (char-to-digit (char string j)) 16)
                         (char-to-digit (char string (1+ j)))))
          finally (return key)))))
+
 
 (defun ascii-string-to-byte-array (string &key (start 0) end)
   "Convert STRING to a (VECTOR (UNSIGNED-BYTE 8)).  It is an error if

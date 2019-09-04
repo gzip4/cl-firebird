@@ -97,10 +97,10 @@ is replaced with replacement."
      do (incf start size)))
 
 
-(declaim (inline subseq! subvec bytes-to-long bytes-to-long-le
-		 long-to-bytes long-to-bytes-le long-to-hex bytes-to-hex
-		 str-to-bytes bytes-to-str hex-to-bytes hex-to-long
-		 str bytes-to-int bytes-to-int-le))
+(declaim (inline bytes-to-long bytes-to-long-le bytes-to-str bytes-to-int bytes-to-int-le bytes-to-hex
+		 long-to-bytes long-to-bytes-le long-to-hex
+		 str str-to-bytes hex-to-bytes hex-to-long
+		 subseq!))
 
 (defun subseq! (sequence start &optional end)
   "Vectors are displaced to sequence, other just subseq."
@@ -114,14 +114,6 @@ is replaced with replacement."
 			:displaced-index-offset start))
     (t (subseq sequence start end))))
 
-(defun subvec (v offset &optional length)
-  (declare (type vector v))
-  (unless length (setf length (- (length v) offset)))
-  (make-array length
-	      :element-type (array-element-type v)
-	      :displaced-to v
-	      :displaced-index-offset offset))
-
 (defun str (x)
   (typecase x
     (string x)
@@ -134,19 +126,19 @@ is replaced with replacement."
   (octets-to-integer s :big-endian nil))
 
 (defun long-to-bytes (n &optional nbytes)
-  (integer-to-octets n :big-endian t
-		     :n-bits (if nbytes (* 8 nbytes))))
+  (crypto:integer-to-octets n :big-endian t
+			    :n-bits (if nbytes (* 8 nbytes))))
 
 (defun long-to-bytes-le (n &optional nbytes)
-  (integer-to-octets n :big-endian nil
-		     :n-bits (if nbytes (* 8 nbytes))))
+  (crypto:integer-to-octets n :big-endian nil
+			    :n-bits (if nbytes (* 8 nbytes))))
 
 (defun long-to-hex (n)
-  (byte-array-to-hex-string
-   (integer-to-octets n)))
+  (crypto:byte-array-to-hex-string
+   (crypto:integer-to-octets n)))
 
 (defun bytes-to-hex (s)
-  (byte-array-to-hex-string s))
+  (crypto:byte-array-to-hex-string s))
 
 (defun str-to-bytes (s)
   (flex:string-to-octets s :external-format :utf8))
@@ -159,11 +151,11 @@ is replaced with replacement."
       (flex:octets-to-string s :external-format :latin1))))
 
 (defun hex-to-bytes (h)
-  (hex-string-to-byte-array h))
+  (crypto:hex-string-to-byte-array h))
 
 (defun hex-to-long (h)
   (octets-to-integer
-   (hex-string-to-byte-array
+   (crypto:hex-string-to-byte-array
     (if (zerop (mod (length h) 2))
 	h
 	(format nil "0~a" h)))))
