@@ -110,9 +110,7 @@
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))
   (block out
-    (handler-bind ((warning
-		    (lambda (w) (setf (slot-value stmt 'open) nil) w))
-		   (operational-error
+    (handler-bind ((operational-error
 		    (lambda (e)
 		      (setf (slot-value stmt 'open) nil)
 		      ;; Attempt to reopen an open cursor

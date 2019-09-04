@@ -295,9 +295,8 @@
 	((intersection gds-codes '(335544838 335544879 335544880 335544466 335544665 335544347 335544558))
 	 (error 'integrity-error :msg message :gds gds-codes :sql sql-code))
 	((intersection gds-codes '(335544321))
-	 #+nil(error 'operational-error :msg message :gds gds-codes :sql sql-code)
-	 ;; XXX: must catch warning if one dont want to break protocol
-	 (warn message))
+	 ;; arithmetic exception, numeric overflow, or string truncation
+	 (error 'operational-error :msg message :gds gds-codes :sql sql-code))
 	((and (or (not (zerop sql-code)) (not (string= "" message)))
 	      (not (intersection gds-codes '(335544434))))
 	 (error 'operational-error :msg message :gds gds-codes :sql sql-code))))
