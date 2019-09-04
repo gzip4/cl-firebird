@@ -569,10 +569,11 @@
       t))
 
 
-(defun db-info* (info-requests)
-  (db-info *connection* info-requests))
+(defun db-info* ()
+  (db-info *connection*))
 
 
 (defun drop-database* ()
+  ;; XXX: restart-case with confirmation/canceling
   (drop-database *connection*))
 
