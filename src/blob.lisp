@@ -38,7 +38,13 @@
       (if data
 	  data
 	  (progn
-	    (setf data (%blob-bytes blob-id conn trans-handle))
+	    (block out
+	      (handler-bind
+		  ((operational-error
+		    (lambda (e) (when (member 335544329 (error-gds-codes e))
+				  (log:warn "Invalid BLOB ID: ~a" blob-id)
+				  (return-from out)))))
+		(setf data (%blob-bytes blob-id conn trans-handle))))
 	    (if (= subtype 1)
 		(setf data (if (connection-use-unicode conn)
 			       (flex:octets-to-string data :external-format :utf8)
@@ -48,14 +54,15 @@
 
 (defmethod print-object ((object blob) stream)
   (when *transaction* (blob-value object))
-  (with-slots (subtype data)
+  (with-slots (subtype data blob-id)
       object
     (print-unreadable-object (object stream :type t :identity nil)
-      (format stream "~a, SIZE: ~a"
+      (format stream "~a/~a, SIZE: ~a"
 	      (case subtype (0 "BINARY") (1 "TEXT") (t "UNKNOWN"))
+	      (bytes-to-hex blob-id)
 	      (length data))
       (when data
-	(let ((s (subseq data 0 (min 16 (length data)))))
+	(let ((s (subseq data 0 (min 8 (length data)))))
 	  (if (= subtype 1)
 	      (format stream " [~a...]" (delete #\Newline s))
 	      (format stream " [#x~a...]" (bytes-to-hex s))))))))
