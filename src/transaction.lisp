@@ -131,7 +131,7 @@
     (values r)))
 
 
-(defvar +isc-info-tra-all+
+(defvar +my-isc-info-tra-all+
   (list
    +isc-info-tra-id+
    +isc-info-tra-oldest-interesting+
@@ -142,7 +142,18 @@
    +isc-info-tra-lock-timeout+))
 
 
-(defun transaction-info (trans info-requests)
+(defvar +my-isc-info-tra-map+
+  (list
+   +isc-info-tra-id+                 :id
+   +isc-info-tra-oldest-interesting+ :oldest-interesting
+   +isc-info-tra-oldest-snapshot+    :oldest-snapshot
+   +isc-info-tra-oldest-active+      :oldest-active
+   +isc-info-tra-isolation+          :isolation
+   +isc-info-tra-access+             :access
+   +isc-info-tra-lock-timeout+       :lock-timeout))
+
+
+(defun %transaction-info (trans info-requests)
   (unless trans (setf trans *transaction*))
   (setf info-requests (check-info-requests info-requests))
   (let ((conn (connection trans)))
@@ -158,8 +169,16 @@
 		      ((= x +isc-info-tra-isolation+)
 		       (cons (elt z 0) (elt z 1)))
 		      ((= x +isc-info-error+) nil)
-		      (t (bytes-to-long-le z)))))
+		      (t (bytes-to-int-le z)))))
 	(values res)))))
+
+
+(defun transaction-info (&optional trans)
+  (let ((info (%transaction-info (or trans *transaction*)
+				 +my-isc-info-tra-all+)))
+    (loop :for i :from 0 :to (1- (length info)) :by 2
+       :do (setf (elt info i) (getf +my-isc-info-tra-map+ (elt info i))))
+    (values info)))
 
 
 (defmethod print-object ((object transaction) stream)

@@ -264,7 +264,83 @@
     (values r)))
 
 
-(defun db-info (conn info-requests)
+(defparameter +my-isc-info-map+
+  (list
+   +isc-info-db-id+ :db-id
+   +isc-info-reads+ :reads
+   +isc-info-writes+ :writes
+   +isc-info-fetches+ :fetches
+   +isc-info-marks+ :marks
+   +isc-info-implementation+ :implementation
+   +isc-info-version+ :version
+   +isc-info-base-level+ :base-level
+   +isc-info-page-size+ :page-size
+   +isc-info-num-buffers+ :num-buffers
+   ;;+isc-info-limbo+ :limbo
+   +isc-info-current-memory+ :current-memory
+   +isc-info-max-memory+ :max-memory
+   +isc-info-window-turns+ :window-turns
+   +isc-info-license+ :license
+   +isc-info-allocation+ :allocation
+   +isc-info-attachment-id+ :attachment-id
+   +isc-info-read-seq-count+ :read-seq-count
+   +isc-info-read-idx-count+ :read-idx-count
+   +isc-info-insert-count+ :insert-count
+   +isc-info-update-count+ :update-count
+   +isc-info-delete-count+ :delete-count
+   +isc-info-backout-count+ :backout-count
+   +isc-info-purge-count+ :purge-count
+   +isc-info-expunge-count+ :expunge-count
+   +isc-info-sweep-interval+ :sweep-interval
+   +isc-info-ods-version+ :ods-version
+   +isc-info-ods-minor-version+ :ods-minor-version
+   +isc-info-no-reserve+ :no-reserve
+   +isc-info-logfile+ :logfile
+   +isc-info-cur-logfile-name+ :cur-logfile-name
+   +isc-info-cur-log-part-offset+ :cur-log-part-offset
+   +isc-info-num-wal-buffers+ :num-wal-buffers
+   +isc-info-wal-buffer-size+ :wal-buffer-size
+   +isc-info-wal-ckpt-length+ :wal-ckpt-length
+   +isc-info-wal-cur-ckpt-interval+ :wal-cur-ckpt-interval
+   +isc-info-wal-prv-ckpt-fname+ :wal-prv-ckpt-fname
+   +isc-info-wal-prv-ckpt-poffset+ :wal-prv-ckpt-poffset
+   +isc-info-wal-recv-ckpt-fname+ :wal-recv-ckpt-fname
+   +isc-info-wal-recv-ckpt-poffset+ :wal-recv-ckpt-poffset
+   +isc-info-wal-grpc-wait-usecs+ :wal-grpc-wait-usecs
+   +isc-info-wal-num-io+ :wal-num-io
+   +isc-info-wal-avg-io-size+ :wal-avg-io-size
+   +isc-info-wal-num-commits+ :wal-num-commits
+   +isc-info-wal-avg-grpc-size+ :wal-avg-grpc-size
+   +isc-info-forced-writes+ :forced-writes
+   +isc-info-user-names+ :user-names
+   +isc-info-page-errors+ :page-errors
+   +isc-info-record-errors+ :record-errors
+   +isc-info-bpage-errors+ :bpage-errors
+   +isc-info-dpage-errors+ :dpage-errors
+   +isc-info-ipage-errors+ :ipage-errors
+   +isc-info-ppage-errors+ :ppage-errors
+   +isc-info-tpage-errors+ :tpage-errors
+   +isc-info-set-page-buffers+ :set-page-buffers
+   +isc-info-db-sql-dialect+ :db-sql-dialect
+   +isc-info-db-read-only+ :db-read-only
+   +isc-info-db-size-in-pages+ :db-size-in-pages
+   +isc-info-att-charset+ :att-charset
+   +isc-info-db-class+ :db-class
+   +isc-info-firebird-version+ :firebird-version
+   +isc-info-oldest-transaction+ :oldest-transaction
+   +isc-info-oldest-active+ :oldest-active
+   +isc-info-oldest-snapshot+ :oldest-snapshot
+   +isc-info-next-transaction+ :next-transaction
+   +isc-info-db-provider+ :db-provider
+   ;;+isc-info-active-transactions+ :active-transactions
+   ;;+isc-info-active-tran-count+ :active-tran-count
+   +isc-info-creation-date+ :creation-date
+   +isc-info-db-file-size+ :db-file-size))
+
+(defparameter +my-isc-info-all+ (remove-if 'symbolp +my-isc-info-map+))
+
+
+(defun %db-info (conn info-requests)
   (setf info-requests (check-info-requests info-requests))
   (wp-op-info-database conn info-requests)
   (multiple-value-bind (h oid buf)
@@ -276,6 +352,13 @@
 	 do (push (if (/= x +isc-info-error+) (db-info-convert-type y v)) r)
 	 do (push y r))
       (values r))))
+
+
+(defun db-info (&optional conn)
+  (let ((info (%db-info (or conn *connection*) +my-isc-info-all+)))
+    (loop :for i :from 0 :to (1- (length info)) :by 2
+       :do (setf (elt info i) (getf +my-isc-info-map+ (elt info i))))
+    (values info)))
 
 
 (defun drop-database (connection)
