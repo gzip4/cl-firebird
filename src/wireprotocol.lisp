@@ -53,10 +53,6 @@
 	  (let ((b (if (> n (length buffer))
 		       (make-array n :element-type 'nibbles:octet)
 		       (subseq! buffer 0 n)))) ; displace buffer
-	    #+nil
-	    (let ((s (usocket:wait-for-input (slot-value wp 'socket) :timeout 1)))
-	      (log:info s))
-	    #+nil(log:info (usocket:socket-state (slot-value wp 'socket)))
 	    ;; XXX: usocket:wait-for-input !!!
 	    (when (/= n (read-sequence b stream))
 	      (error "Unexpected end of stream: ~a" stream))
@@ -74,18 +70,18 @@
 
 
 (defun recv-int32 (wp)
-  (with-slots (buffer stream stream-cypher-recv) wp
-    (let ((b (subseq! buffer 0 4))) ; displace buffer
-      (when (/= 4 (read-sequence b stream))
-	(error "Unexpected end of stream: ~a" stream))
-      (log:trace "RAW: ~a ~a~%#x~a" 4 b (bytes-to-hex b))
-      (when stream-cypher-recv
-	;; XXX: evil ironclad forces us to copy-copy-copy...
-	(setf b (make-array 4 :initial-contents b :element-type 'nibbles:octet))
-	(crypto:decrypt-in-place stream-cypher-recv b)
-	(log:trace "DECRYPTED: ~a ~a~%#x~a" 4 b (bytes-to-hex b)))
-      (incf (slot-value wp 'bytes-in) 4)
-      (values (bytes-to-int b)))))
+  (with-slots ((b buffer4) stream stream-cypher-recv bytes-in) wp
+    (let ((num (if stream-cypher-recv
+		   (progn
+		     (when (/= 4 (read-sequence b stream))
+		       (error "Unexpected end of stream: ~a" stream))
+		     (crypto:decrypt-in-place stream-cypher-recv b)
+		     (let ((x (crypto:octets-to-integer b)))
+		       (if (< x (ash 1 31)) x (- x (ash 1 32)))))
+		   (nibbles:read-sb32/be stream))))
+      (incf bytes-in 4)
+      (log:trace num)
+      (values num))))
 
 
 (defun %pack-cnct-param (k v)

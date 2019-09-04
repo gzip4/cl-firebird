@@ -17,6 +17,7 @@
    (plugin-list)
    (plugin-list*)
    (buffer :initform (make-array 65536 :element-type 'nibbles:octet))
+   (buffer4 :initform (make-array 4 :element-type 'nibbles:octet))
    (socket :initform nil)
    (stream)
    (stream-cypher-recv :initform nil)
