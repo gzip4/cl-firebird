@@ -144,9 +144,15 @@
   (with-slots (sqltype sqlsubtype sqlscale) v
     (cond
       ((= sqltype +sql-type-text+)
-       (string-right-trim '(#\Space) (bytes-to-str raw-value)))
+       (if (member sqlsubtype '(0 1))	; character set (NONE|OCTETS)
+	   raw-value
+	   ;; XXX: how to know what charset to use to decode string?
+	   (string-right-trim '(#\Space) (bytes-to-str raw-value))))
       ((= sqltype +sql-type-varying+)
-       (bytes-to-str raw-value))
+       (if (member sqlsubtype '(0 1))	; character set (NONE|OCTETS)
+	   raw-value
+	   ;; XXX: how to know what charset to use to decode string?
+	   (bytes-to-str raw-value)))
       ((member sqltype '(#.+sql-type-short+ #.+sql-type-long+ #.+sql-type-int64+))
        (let ((x (bytes-to-int raw-value)))
 	 (if (zerop sqlscale)
