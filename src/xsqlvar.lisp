@@ -141,14 +141,17 @@
 
 
 (defun xsqlvar-value (v raw-value)
-  (with-slots (sqltype sqlsubtype) v
+  (with-slots (sqltype sqlsubtype sqlscale) v
     (cond
       ((= sqltype +sql-type-text+)
        (string-right-trim '(#\Space) (bytes-to-str raw-value)))
       ((= sqltype +sql-type-varying+)
        (bytes-to-str raw-value))
       ((member sqltype '(#.+sql-type-short+ #.+sql-type-long+ #.+sql-type-int64+))
-       (unsigned-to-signed-int (bytes-to-long raw-value) (xsqlvar-sqlscale v)))
+       (let ((x (bytes-to-int raw-value)))
+	 (if (zerop sqlscale)
+	     x
+	     (/ x (expt 10 (abs sqlscale))))))
       ((= sqltype +sql-type-date+)
        (multiple-value-bind (y m d)
 	   (%xsqlvar-parse-date raw-value)
@@ -298,8 +301,10 @@ blr_end = 255
   (let ((i 0) (index 0) (item (elt buf 0)))
     (flet ((get-item (&optional x)
 	     (let* ((l (bytes-to-long-le (subseq! buf (+ i 1) (+ i 3))))
-		    (item (if x (bytes-to-str (subseq! buf (+ i 3) (+ i 3 l)))
-			      (bytes-to-long-le (subseq! buf (+ i 3) (+ i 3 l))))))
+		    (item (case x
+			    (:str (bytes-to-str (subseq! buf (+ i 3) (+ i 3 l))))
+			    (:int (bytes-to-int-le (subseq! buf (+ i 3) (+ i 3 l))))
+			    (otherwise (bytes-to-long-le (subseq! buf (+ i 3) (+ i 3 l)))))))
 	       (incf i (+ 3 l)) item)))
       (macrolet ((with-slots! ((&rest slots) obj &body body)
 		     (let ((sl (loop :for s :in slots
@@ -320,7 +325,7 @@ blr_end = 255
 	       (#.+isc-info-sql-type+
 		(setf sqltype (logand (get-item) (lognot 1)))) ; clear bit 0
 	       (#.+isc-info-sql-sub-type+ (setf sqlsubtype (get-item)))
-	       (#.+isc-info-sql-scale+    (setf sqlscale   (unsigned-to-signed-int (get-item))))
+	       (#.+isc-info-sql-scale+    (setf sqlscale   (get-item :int)))
 	       (#.+isc-info-sql-length+   (setf sqllen     (get-item)))
 	       (#.+isc-info-sql-null-ind+ (setf null-ok    (> (get-item) 0)))
 	       (#.+isc-info-sql-field+    (setf fieldname  (get-item :str)))

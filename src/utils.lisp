@@ -168,25 +168,25 @@ is replaced with replacement."
 	h
 	(format nil "0~a" h)))))
 
-
-(defun unsigned-to-signed-int (x &optional (scale 0))
-  (let* ((signed (etypecase x
-		   ((unsigned-byte   8) (if (< x #.(ash 1 7))   x (- x #.(ash 1 8))))
-		   ((unsigned-byte  16) (if (< x #.(ash 1 15))  x (- x #.(ash 1 16))))
-		   ((unsigned-byte  32) (if (< x #.(ash 1 31))  x (- x #.(ash 1 32))))
-		   ((unsigned-byte  64) (if (< x #.(ash 1 63))  x (- x #.(ash 1 64))))
-		   ((unsigned-byte 128) (if (< x #.(ash 1 127)) x (- x #.(ash 1 128)))))))
-    (if (zerop scale)
-	signed
-	(/ signed (expt 10 (abs scale))))))
-
 (defun bytes-to-int (s)
-  (unsigned-to-signed-int
-   (octets-to-integer s :big-endian t)))
+  (let ((x (octets-to-integer s :big-endian t)))
+    (case (length s)
+      (4  (if (< x #.(ash 1 31))  x (- x #.(ash 1 32))))
+      (8  (if (< x #.(ash 1 63))  x (- x #.(ash 1 64))))
+      (2  (if (< x #.(ash 1 15))  x (- x #.(ash 1 16))))
+      (1  (if (< x #.(ash 1 7))   x (- x #.(ash 1 8))))
+      (16 (if (< x #.(ash 1 127)) x (- x #.(ash 1 128))))
+      (otherwise x))))
 
 (defun bytes-to-int-le (s)
-  (unsigned-to-signed-int
-   (octets-to-integer s :big-endian nil)))
+  (let ((x (octets-to-integer s :big-endian nil)))
+    (case (length s)
+      (4  (if (< x #.(ash 1 31))  x (- x #.(ash 1 32))))
+      (8  (if (< x #.(ash 1 63))  x (- x #.(ash 1 64))))
+      (2  (if (< x #.(ash 1 15))  x (- x #.(ash 1 16))))
+      (1  (if (< x #.(ash 1 7))   x (- x #.(ash 1 8))))
+      (16 (if (< x #.(ash 1 127)) x (- x #.(ash 1 128))))
+      (otherwise x))))
 
 
 
