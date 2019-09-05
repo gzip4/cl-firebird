@@ -5,12 +5,12 @@
 (in-package :cl-firebird-asd)
 
 (defsystem cl-firebird
-    :version "0.2"
+    :version "0.3"
     :author "Kirill Zverev"
     :license "MIT"
     :description "Firebird database remote protocol client"
     :depends-on (:flexi-streams
-		 :usocket
+		 #-sbcl :usocket
 		 :ironclad
 		 :nibbles
 		 :log4cl

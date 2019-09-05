@@ -17,11 +17,41 @@
 
 
 (defun %socket-connect (conn)
-  (setf (slot-value conn 'socket)
-	(usocket:socket-connect (slot-value conn 'hostname)
-				(slot-value conn 'port)
-				:timeout (slot-value conn 'timeout)
-				:element-type '(unsigned-byte 8))))
+  (with-slots (hostname port timeout socket stream) conn
+    (let ((sock
+	   #-sbcl
+	    (usocket:socket-connect hostname port
+				    :timeout timeout
+				    :element-type '(unsigned-byte 8))
+	    #+sbcl
+	    (let ((host-ent (typecase hostname
+			      (string (sb-bsd-sockets:get-host-by-name hostname))
+			      (t      (sb-bsd-sockets:get-host-by-address hostname))))
+		  (s (make-instance 'sb-bsd-sockets:inet-socket :protocol :tcp :type :stream)))
+	      (sb-bsd-sockets:socket-connect s (sb-bsd-sockets:host-ent-address host-ent) port))))
+      (setf socket sock)
+      (setf stream
+	    #-sbcl (usocket:socket-stream sock)
+	    #+sbcl (sb-bsd-sockets:socket-make-stream
+		    sock :element-type '(unsigned-byte 8) :timeout timeout :output t :input t))
+      (values sock))))
+
+
+(defun %server-connect (conn op-connect)
+  (let (sock stream)
+    (handler-bind
+	((error (lambda (e)
+		  (declare (ignore e))
+		  (when stream (close stream))
+		  (when sock
+		    #+sbcl (sb-bsd-sockets:socket-close sock)
+		    #-sbcl (usocket:socket-close sock))
+		  (setf (slot-value conn 'socket) nil
+			(slot-value conn 'stream) nil))))
+      (setf sock (%socket-connect conn))
+      (setf stream (slot-value conn 'stream))
+      (funcall op-connect)
+      (wp-op-accept conn))))
 
 
 (defun connect (&key dsn user password role host database
@@ -56,16 +86,12 @@
 	  (slot-value conn 'isolation-level) (if (null isolation-level)
 						 +isolation-level-read-commited+
 						 (floor isolation-level)))
-    (let ((sock (%socket-connect conn)))
-      (setf (slot-value conn 'stream) (usocket:socket-stream sock))
-      (wp-op-connect conn auth-plugin-name wire-crypt)
-      (handler-case
-	  (wp-op-accept conn)
-	(operational-error (e)
-	  (usocket:socket-close sock)
-	  (setf (slot-value conn 'socket) nil
-		(slot-value conn 'stream) nil)
-	  (error e))))
+
+    
+    (%server-connect conn (lambda ()
+			    (wp-op-connect
+			     conn auth-plugin-name wire-crypt)))
+    
     (cond
       (create-new (wp-op-create conn page-size))
       (is-services (error "is-services"))
@@ -102,16 +128,9 @@
 	  (slot-value conn 'isolation-level) (if (null isolation-level)
 						 +isolation-level-read-commited+
 						 (floor isolation-level)))
-    (let ((sock (%socket-connect conn)))
-      (setf (slot-value conn 'stream) (usocket:socket-stream sock))
-      (wp-op-connect/old conn)
-      (handler-case
-	  (wp-op-accept conn)
-	(operational-error (e)
-	  (usocket:socket-close sock)
-	  (setf (slot-value conn 'socket) nil
-		(slot-value conn 'stream) nil)
-	  (error e))))
+
+    (%server-connect conn (lambda () (wp-op-connect/old conn)))
+
     (cond
       (create-new (wp-op-create conn page-size))
       (is-services (error "is-services"))
