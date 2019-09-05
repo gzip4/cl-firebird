@@ -216,7 +216,7 @@
 
 (defun wp-op-connect/old (wp)
   (log:debug wp)
-  (let* ((login (slot-value wp 'user))
+  (let* ((login (string (slot-value wp 'user)))
 	 (user (%get-username))
 	 (hostname (%get-hostname))
 	 (specific-data (%crypt-password (slot-value wp 'password)))
@@ -233,7 +233,7 @@
 	    (xdr-int32 +connect-version2+)
 	    (xdr-int32 +arch-generic+)
 	    (xdr-string (or (slot-value wp 'filename) "") :external-format :latin1)
-	    (xdr-int32 1)
+	    (xdr-int32 1)		; 1 protocol supported
 	    (xdr-octets cnct-params)
 	    (write-sequence #.(%encode-proto +protocol-version10+ 1 2 3 2) s))))
     (log:trace packet)
