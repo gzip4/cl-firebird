@@ -111,7 +111,7 @@
    #+Allegro   (sys:getenv name)
    #+CLISP     (ext:getenv name)
    #+ECL       (si:getenv name)
-   #+SBCL      (sb-unix::posix-getenv name)
+   #+SBCL      (sb-posix:getenv name)
    #+LISPWORKS (lispworks:environment-variable name)
    #+CCL       (ccl:getenv name)
    default))
@@ -123,8 +123,10 @@
   #+os-windows(%my-getenv "USERNAME" "user"))
 
 
+(declaim (inline crypt-password))
+
 (defun crypt-password (password)
-  (subseq! (crypt:crypt password +legacy-password-salt+) 2))
+  (subseq (crypt:crypt password +legacy-password-salt+) 2))
 
 
 (defun wp-uid (wp auth-plugin wire-crypt)
@@ -461,6 +463,7 @@
   (or
    ;; XXX: add for other lisps
    #+CCL (ccl::getpid)
+   #+SBCL (sb-posix:getpid)
    1))
 
 
