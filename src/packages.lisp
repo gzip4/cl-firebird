@@ -87,7 +87,10 @@
 	   ;; metadata
 	   #:list-all-tables
 	   #:list-all-tables/system
-	   #:list-table-fields))
+	   #:list-table-fields
+	   #:list-character-sets
+	   #:list-character-sets-info
+	   #:select-from-database))
 
-(in-package #:cl-user)
+(in-package #:cl-firebird)
 
