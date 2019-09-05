@@ -186,6 +186,12 @@ is replaced with replacement."
   `(setf ,v (concatenate 'string ,v ,@args)))
 
 
+(defun flatten (structure)
+  (cond ((null structure) nil)
+        ((atom structure) `(,structure))
+        (t (mapcan #'flatten structure))))
+
+
 ;; XXX: deprecate
 (defmacro with-bytes (&body body)
   (let ((out (gensym "BYTE-STREAM")))

@@ -31,4 +31,5 @@
 			       (:file "xsqlvar")
 			       (:file "transaction")
 			       (:file "statement")
-			       (:file "connection")))))
+			       (:file "connection")
+			       (:file "metadata")))))
