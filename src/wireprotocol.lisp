@@ -28,7 +28,6 @@
 
 (declaim (inline send-channel recv-channel recv-int32))
 
-
 (defun send-channel (wp b &optional (flush t))
   (when (> (length b) 0)
     (log:trace "RAW: ~a #x~a" (length b) (bytes-to-hex b))
@@ -84,6 +83,14 @@
       (values num))))
 
 
+;; helper functions
+(declaim (inline %pack-cnct-param %get-hostname %my-getenv %get-username
+		 crypt-password %skip-op-dummy %skip-lazy-response
+		 %wp-op-accept/wire-crypt %convert-username %getpid
+		 %getprocname %params-null-indicator %params-to-blr/vls
+		 %kw %make-null-indicator))
+
+
 (defun %pack-cnct-param (k v)
   (with-byte-stream (s)
     (if (/= k +cnct-specific-data+)
@@ -122,8 +129,6 @@
   #+os-unix(%my-getenv "USER" "user")
   #+os-windows(%my-getenv "USERNAME" "user"))
 
-
-(declaim (inline crypt-password))
 
 (defun crypt-password (password)
   (subseq (crypt:crypt password +legacy-password-salt+) 2))
@@ -371,9 +376,9 @@
   (values (wp-op-response wp)))
 
 
-(defun %convert-username (wp)
-  (let* ((user (string (slot-value wp 'user)))
-	 (ul (length user)))
+(defun %convert-username (user)
+  (declare (type string user))
+  (let* ((ul (length user)))
     (if (and (> ul 2)
 	     (char= #\" (elt user 0))
 	     (char= #\" (elt user (1- ul))))
@@ -407,7 +412,7 @@
 		(b2 (bytes-to-str b1))
 		(b3 (hex-to-long b2))
 		(server-public-key b3)
-		(user (%convert-username wp)))
+		(user (%convert-username (string (slot-value wp 'user)))))
 	   (log:trace user server-salt server-public-key)
 	   (multiple-value-bind (auth-data session-key)
 	       (client-proof (str-to-bytes user)
