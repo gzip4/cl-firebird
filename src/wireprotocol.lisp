@@ -471,6 +471,7 @@
   (or
    ;; XXX: add for other lisps
    #+CCL (first ccl:*command-line-argument-list*)
+   #+SBCL (first sb-ext:*posix-argv*)
    "lisp"))
 
 (defun create-dpb-create (wp page-size)
