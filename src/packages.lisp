@@ -85,11 +85,22 @@
 	   #:*statement*
 
 	   ;; metadata
+	   #:list-all-domains
 	   #:list-all-tables
 	   #:list-all-tables/system
 	   #:list-table-fields
 	   #:list-character-sets
 	   #:list-character-sets-info
+	   #:list-all-procedures
+	   #:list-all-functions
+	   #:list-all-indices
+	   #:list-all-triggers
+	   #:list-all-generators
+	   #:list-all-check-constraints
+	   #:list-all-collations
+	   #:list-all-exceptions
+	   #:list-all-roles
+	   #:list-all-psql-packages
 	   #:select-from-database))
 
 (in-package #:cl-firebird)
