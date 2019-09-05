@@ -95,11 +95,11 @@
 
 
 (defmethod print-object ((object xsqlvar) stream)
-  (print-unreadable-object (object stream :type t :identity nil)
+  (print-unreadable-object (object stream :type nil :identity nil)
     (with-slots (sqltype sqlscale sqlsubtype sqllen
 			 null-ok fieldname relname ownname aliasname)
 	object
-      (format stream "[~a/~a, ~{~a~^, ~}]"
+      (format stream "XSQLVAR [~a/~a, ~{~a~^, ~}]"
 	      (getf +xsqlvar-type-repr+ sqltype) sqlsubtype
 	      (list sqlscale sqllen (if null-ok "NULLABLE" "NOT NULL")
 		    fieldname aliasname relname ownname)))))
