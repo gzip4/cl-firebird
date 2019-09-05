@@ -82,7 +82,12 @@
 	   ;; specials
 	   #:*connection*
 	   #:*transaction*
-	   #:*statement*))
+	   #:*statement*
+
+	   ;; metadata
+	   #:list-all-tables
+	   #:list-all-tables/system
+	   #:list-table-fields))
 
 (in-package #:cl-user)
 
