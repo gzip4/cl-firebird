@@ -35,7 +35,7 @@ WHERE RDB$SYSTEM_FLAG = 1 ORDER BY 1")
 
 
 (defun list-character-sets-info (&optional conn)
-  "Returns a list of all system character sets info (id, bytes-per-character)."
+  "Returns a plist of all system character sets info (id, bytes-per-character)."
   (with-transaction (conn)
     (with-statement (s "SELECT RDB$CHARACTER_SET_NAME,RDB$CHARACTER_SET_ID,RDB$BYTES_PER_CHARACTER
 FROM RDB$CHARACTER_SETS WHERE RDB$SYSTEM_FLAG = 1 ORDER BY 1")
