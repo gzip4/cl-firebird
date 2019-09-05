@@ -85,7 +85,7 @@
 
 ;; helper functions
 (declaim (inline %pack-cnct-param %get-hostname %my-getenv %get-username
-		 crypt-password %skip-op-dummy %skip-lazy-response
+		 %crypt-password %skip-op-dummy %skip-lazy-response
 		 %wp-op-accept/wire-crypt %convert-username %getpid
 		 %getprocname %params-null-indicator %params-to-blr/vls
 		 %kw %make-null-indicator))
@@ -130,7 +130,7 @@
   #+os-windows(%my-getenv "USERNAME" "user"))
 
 
-(defun crypt-password (password)
+(defun %crypt-password (password)
   (subseq (crypt:crypt password +legacy-password-salt+) 2))
 
 
@@ -151,7 +151,7 @@
 	       specific-data (long-to-hex A$))))
       ((member auth-plugin '(:legacy-auth :legacy))
        (setf auth-plugin "legacy_auth")
-       (setf specific-data (crypt-password (slot-value wp 'password))))
+       (setf specific-data (%crypt-password (slot-value wp 'password))))
       (t (error 'operational-error
 		:msg (format nil "Unknown auth plugin name '~a'" auth-plugin))))
 
@@ -219,7 +219,7 @@
   (let* ((login (slot-value wp 'user))
 	 (user (%get-username))
 	 (hostname (%get-hostname))
-	 (specific-data (crypt-password (slot-value wp 'password)))
+	 (specific-data (%crypt-password (slot-value wp 'password)))
 	 (cnct-params
 	  (make-bytes (%pack-cnct-param +cnct-login+         (str-to-bytes login))
 		      (%pack-cnct-param +cnct-specific-data+ (str-to-bytes specific-data))
@@ -430,7 +430,7 @@
 	((string= "Legacy_Auth" accept-plugin-name)
 	 ;; XXX: never be here, maybe unneeded
 	 (setf (slot-value wp 'auth-data)
-	       (crypt-password (slot-value wp 'password))))
+	       (%crypt-password (slot-value wp 'password))))
 	(t
 	 (error 'operational-error
 		:msg (format nil "Unknown auth plugin: ~a" accept-plugin-name))))))
@@ -501,7 +501,7 @@
 	(with-slots (password) wp
 	  (if (= (protocol-accept-version wp) +protocol-version10+)
 	      (strout +isc-dpb-password+ password)
-	      (strout +isc-dpb-password-enc+ (crypt-password password)))))
+	      (strout +isc-dpb-password-enc+ (%crypt-password password)))))
       (with-slots (role auth-data timezone) wp
 	(when role (strout +isc-dpb-sql-role-name+ (string role)))
 	(when auth-data (strout +isc-dpb-specific-auth-data+ (bytes-to-hex auth-data)))
