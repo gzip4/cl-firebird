@@ -464,7 +464,7 @@
    ;; XXX: add for other lisps
    #+CCL (ccl::getpid)
    #+SBCL (sb-posix:getpid)
-   1))
+   31415))
 
 
 (defun %getprocname ()
@@ -472,44 +472,47 @@
    ;; XXX: add for other lisps
    #+CCL (first ccl:*command-line-argument-list*)
    #+SBCL (first sb-ext:*posix-argv*)
-   "lisp"))
+   (lisp-implementation-type)))
 
-(defun create-dpb-create (wp page-size)
-  (with-bytes
-    (<< +isc-dpb-version1+)
-    (let ((cs (str-to-bytes (string (slot-value wp 'charset))))
-	  (un (str-to-bytes (string (slot-value wp 'user)))))
-      (<< +isc-dpb-set-db-charset+) (<< (length cs)) (<< cs)
-      (<< +isc-dpb-lc-ctype+)  (<< (length cs)) (<< cs)
-      (<< +isc-dpb-user-name+) (<< (length un)) (<< un))
-    (when (< (protocol-accept-version wp) +protocol-version13+)
-      (if (= (protocol-accept-version wp) +protocol-version10+)
-	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
-	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes (crypt-password (slot-value wp 'password)))))
-	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
-    (when (slot-value wp 'role)
-      (let ((rn (str-to-bytes (string (slot-value wp 'role)))))
-	(<< +isc-dpb-sql-role-name+) (<< (length rn)) (<< rn)))
-    (<< +isc-dpb-process-id+) (<< 4) (<< (long-to-bytes (%getpid) 4))
-    (let ((pn (str-to-bytes (%getprocname))))
-      (<< +isc-dpb-process-name+) (<< (length pn)) (<< pn))
-    (when (slot-value wp 'auth-data)
-      (let ((ad (str-to-bytes (bytes-to-hex (slot-value wp 'auth-data)))))
-	(<< +isc-dpb-specific-auth-data+) (<< (length ad)) (<< ad)))
-    (when (slot-value wp 'timezone)
-      (let ((tz (str-to-bytes (slot-value wp 'timezone))))
-	(<< +isc-dpb-session-time-zone+) (<< (length tz)) (<< tz)))
-    (<< +isc-dpb-sql-dialect+) (<< 4) (<< (long-to-bytes-le 3 4))
-    (<< +isc-dpb-force-write+) (<< 4) (<< (long-to-bytes-le 1 4))
-    (<< +isc-dpb-overwrite+)   (<< 4) (<< (long-to-bytes-le 1 4))
-    (<< +isc-dpb-page-size+)   (<< 4) (<< (long-to-bytes-le page-size 4))
-    ))
+
+(defun create-dpb-v1 (wp &optional create-db page-size)
+  (with-byte-stream (bs)
+    (flet ((strout (p s)
+	     (let ((bytes (str-to-bytes s)))
+	       (write-byte p bs)
+	       (write-byte (length bytes) bs)
+	       (write-sequence bytes bs)))
+	   (u32out (p x)
+	     (write-byte p bs) (write-byte 4 bs)
+	     (nibbles:write-ub32/le x bs)))
+      ;; XXX: dpb v1 vs v2
+      (write-byte +isc-dpb-version1+ bs)
+      (with-slots (user charset) wp
+	(when create-db
+	  (strout +isc-dpb-set-db-charset+ (string charset)))
+	(strout +isc-dpb-lc-ctype+ (string charset))
+	(strout +isc-dpb-user-name+ (string user)))
+      (when (< (protocol-accept-version wp) +protocol-version13+)
+	(with-slots (password) wp
+	  (if (= (protocol-accept-version wp) +protocol-version10+)
+	      (strout +isc-dpb-password+ password)
+	      (strout +isc-dpb-password-enc+ (crypt-password password)))))
+      (with-slots (role auth-data timezone) wp
+	(when role (strout +isc-dpb-sql-role-name+ (string role)))
+	(when auth-data (strout +isc-dpb-specific-auth-data+ (bytes-to-hex auth-data)))
+	(when timezone (strout +isc-dpb-session-time-zone+ (string timezone))))
+      (u32out +isc-dpb-process-id+ (%getpid)) ; process-id / process-name
+      (strout +isc-dpb-process-name+ (%getprocname))
+      (when create-db
+	(u32out +isc-dpb-sql-dialect+ 3)
+	(u32out +isc-dpb-force-write+ 1)
+	(u32out +isc-dpb-overwrite+ 1)
+	(u32out +isc-dpb-page-size+ (or page-size 4096))))))
 
 
 (defun wp-op-create (wp &optional (page-size 4096))
   (log:debug wp page-size)
-  (let* ((dpb (create-dpb-create wp page-size))
+  (let* ((dpb (create-dpb-v1 wp t page-size))
 	 (packet (with-byte-stream (s)
 		   (xdr-int32 +op-create+)
 		   (xdr-int32 0)	; Database Object ID
@@ -533,37 +536,9 @@
   (values))
 
 
-(defun create-dpb-attach (wp)
-  (with-bytes
-    (<< +isc-dpb-version1+)
-    (let ((cs (str-to-bytes (string (slot-value wp 'charset))))
-	  (un (str-to-bytes (string (slot-value wp 'user)))))
-      (<< +isc-dpb-lc-ctype+)  (<< (length cs)) (<< cs)
-      (<< +isc-dpb-user-name+) (<< (length un)) (<< un))
-    (when (< (protocol-accept-version wp) +protocol-version13+)
-      (if (= (protocol-accept-version wp) +protocol-version10+)
-	  (let ((pwd (str-to-bytes (slot-value wp 'password))))
-	    (<< +isc-dpb-password+) (<< (length pwd)) (<< pwd))
-	  (let ((pwd (str-to-bytes (crypt-password (slot-value wp 'password)))))
-	    (<< +isc-dpb-password-enc+) (<< (length pwd)) (<< pwd))))
-    (when (slot-value wp 'role)
-      (let ((rn (str-to-bytes (string (slot-value wp 'role)))))
-	(<< +isc-dpb-sql-role-name+) (<< (length rn)) (<< rn)))
-    (<< +isc-dpb-process-id+) (<< 4) (<< (long-to-bytes (%getpid) 4))
-    (let ((pn (str-to-bytes (%getprocname))))
-      (<< +isc-dpb-process-name+) (<< (length pn)) (<< pn))
-    (when (slot-value wp 'auth-data)
-      (let ((ad (str-to-bytes (bytes-to-hex (slot-value wp 'auth-data)))))
-	(<< +isc-dpb-specific-auth-data+) (<< (length ad)) (<< ad)))
-    (when (slot-value wp 'timezone)
-      (let ((tz (str-to-bytes (slot-value wp 'timezone))))
-	(<< +isc-dpb-session-time-zone+) (<< (length tz)) (<< tz)))
-    ))
-
-
 (defun wp-op-attach (wp)
   (log:debug wp)
-  (let* ((dpb (create-dpb-attach wp))
+  (let* ((dpb (create-dpb-v1 wp))
 	 (packet (with-byte-stream (s)
 		   (xdr-int32 +op-attach+)
 		   (xdr-int32 0) ; Database Object ID
