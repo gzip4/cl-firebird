@@ -135,8 +135,8 @@ CASE T.RDB$FIELD_TYPE
 END                                  TYPE_NAME,
 T.RDB$CHARACTER_LENGTH               CHR_LENGTH
 FROM RDB$FIELDS T
-WHERE COALESCE( RDB$SYSTEM_FLAG, 0) = 0 
-    AND NOT ( RDB$FIELD_NAME STARTING WITH 'RDB$')")
+WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 
+    AND NOT (RDB$FIELD_NAME STARTING WITH 'RDB$')")
       (let ((r (fetch (execute s))))
 	(values r)))))
 
