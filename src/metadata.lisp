@@ -33,6 +33,7 @@ WHERE RDB$SYSTEM_FLAG = 1 ORDER BY 1")
       (mapcar (lambda (x) (intern x :keyword))
 	      (flatten (fetch (execute s)))))))
 
+
 (defun list-character-sets-info (&optional conn)
   "Returns a list of all system character sets info (id, bytes-per-character)."
   (with-transaction (conn)
@@ -41,6 +42,7 @@ FROM RDB$CHARACTER_SETS WHERE RDB$SYSTEM_FLAG = 1 ORDER BY 1")
       (loop :for (cs id bpc) :in (fetch (execute s))
 	 :collect (intern cs :keyword)
 	 :collect (cons id bpc)))))
+
 
 (defun select-from-database (&rest args)
   "Select one row from a database in current transaction."
@@ -52,3 +54,6 @@ FROM RDB$CHARACTER_SETS WHERE RDB$SYSTEM_FLAG = 1 ORDER BY 1")
 				   (t x))))))
     (with-statement (s sql)
       (values (fetch1 (execute s)) sql))))
+
+
+
