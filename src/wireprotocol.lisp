@@ -439,16 +439,16 @@
     (when (= op-code +op-response+)
       (return-from wp-op-accept (%parse-op-response wp)))
     
-    (let ((b (recv-channel wp 12)))
-      (with-slots (accept-version
-		   accept-architecture
-		   accept-type
-		   lazy-response-count)
-	  wp
-	(setf accept-version      (bytes-to-long (subseq! b 2 4))
-	      accept-architecture (bytes-to-long (subseq! b 4 8))
-	      accept-type         (bytes-to-long (subseq! b 8))
-	      lazy-response-count 0)))
+    (with-slots (accept-version
+		 accept-architecture
+		 accept-type
+		 lazy-response-count)
+	wp
+      ;; accept-version is unsigned short
+      (setf accept-version      (ldb (byte 16 0) (bytes-to-long (recv-channel wp 4)))
+	    accept-architecture (recv-int32 wp)
+	    accept-type         (recv-int32 wp)
+	    lazy-response-count 0))
 
     (setf (slot-value wp 'auth-data) nil)
     (if (or (= op-code +op-cond-accept+)
