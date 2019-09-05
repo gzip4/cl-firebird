@@ -192,16 +192,3 @@ is replaced with replacement."
         (t (mapcan #'flatten structure))))
 
 
-;; XXX: deprecate
-(defmacro with-bytes (&body body)
-  (let ((out (gensym "BYTE-STREAM")))
-  `(flex:with-output-to-sequence
-    (,out)
-    (flet ((<< (&rest args)
-	     (loop :for x :in args
-		:do (typecase x
-		      (null)
-		      (integer (write-byte (if (< x 0) (+ 256 x) x) ,out))
-		      (t (write-sequence x ,out))))))
-      ,@body))))
-
