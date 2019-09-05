@@ -151,12 +151,16 @@
 
 (defmethod print-object ((object connection) stream)
   (print-unreadable-object (object stream :type t :identity t)
-    (with-slots (user role charset filename hostname port auth-plugin-name)
+    (with-slots (user role charset
+		      filename hostname port
+		      auth-plugin-name wire-crypt)
 	object
-      (format stream "[~a/~a:~a] [~a~a]~a AUTH:~a" hostname port filename
+      (format stream "[~a/~a:~a] [~a~a]~a" hostname port filename
 	      user (if role (format nil "/~a" role) "")
-	      (if charset (format nil " CHAR:~a" charset) "")
-	      auth-plugin-name))))
+	      (if charset (format nil " CHAR:~a" charset) ""))
+      (when (>= (protocol-accept-version object) +protocol-version13+)
+	(format stream " AUTH:~a~a" auth-plugin-name
+		(if wire-crypt "/CRYPT" ""))))))
 
 
 (defparameter +REQ-INT+
