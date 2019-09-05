@@ -140,7 +140,7 @@
 
 
 (defun %clean-connection-object (connection)
-  #+sbcl (sb-bsd-sockets:socket-close sock)
+  #+sbcl (sb-bsd-sockets:socket-close (slot-value connection 'socket))
   #-sbcl (usocket:socket-close (slot-value connection 'socket))
   (setf (slot-value connection 'socket) nil
 	(slot-value connection 'stream) nil
