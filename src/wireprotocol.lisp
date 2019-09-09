@@ -134,7 +134,7 @@
   (subseq (crypt:crypt password +legacy-password-salt+) 2))
 
 
-(defun wp-uid (wp auth-plugin wire-crypt)
+(defun %wp-uid (wp auth-plugin wire-crypt)
   (log:trace wp)
   (let ((auth-plugin-list "Srp256,Srp,Legacy_Auth")
 	(login (string (slot-value wp 'user)))
@@ -207,7 +207,7 @@
 	   (xdr-int32 +arch-generic+)
 	   (xdr-string (or (slot-value wp 'filename) ""))
 	   (xdr-int32 (length +protocols+))
-	   (xdr-octets (wp-uid wp auth-plugin wire-crypt))
+	   (xdr-octets (%wp-uid wp auth-plugin wire-crypt))
 	   (write-sequence (apply #'make-bytes +protocols+) s))))
     (log:trace packet)
     (send-channel wp packet))
