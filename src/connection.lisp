@@ -5,12 +5,12 @@
 (defun %parse-dsn (dsn)
   (let ((i (position #\: dsn)) h p f)
     (if i
-	(let* ((hostport (subseq dsn 0 i))
+	(let* ((hostport (subseq! dsn 0 i))
 	       (j (position #\/ hostport)))
-	  (setf f (subseq dsn (1+ i)))
+	  (setf f (subseq! dsn (1+ i)))
 	  (if j
-	      (setf h (subseq hostport 0 j)
-		    p (parse-integer (subseq hostport (1+ j))))
+	      (setf h (subseq! hostport 0 j)
+		    p (parse-integer (subseq! hostport (1+ j))))
 	      (setf h hostport)))
 	(setf f dsn))
     (values h p f)))
@@ -207,11 +207,11 @@
         +isc-info-update-count+))
 
 
-(defun db-info-creation-date (v)
+(defun %db-info-creation-date (v)
   (let* ((nday (+ (bytes-to-long-le
-		   (subseq v 0 4))
+		   (subseq! v 0 4))
 		  2400001 -1721119))
-	 (ntime (bytes-to-long-le (subseq v 4)))
+	 (ntime (bytes-to-long-le (subseq! v 4)))
 	 (century (floor (1- (* 4 nday)) 146097))
 	 dd mm yy h m s ms)
     (setf nday (- (* 4 nday) 1 (* 146097 century)))
@@ -235,30 +235,30 @@
     (list (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d:~2,'0d.~d" yy mm dd h m s ms)
 	  yy mm dd h m s ms)))
 
-(defun db-info-convert-type (ir v)
+(defun %db-info-convert-type (ir v)
   (cond
     ((= ir +isc-info-base-level+) (elt v 1))
     ((= ir +isc-info-db-id+)
      (let* ((conn-code (elt v 0))
 	    (len1 (elt v 1))
-	    (filename (bytes-to-str (subseq v 2 (+ 2 len1))))
+	    (filename (bytes-to-str (subseq! v 2 (+ 2 len1))))
 	    (len2 (elt v (+ 2 len1)))
-	    (sitename (bytes-to-str (subseq v (+ 3 len1) (+ 3 len1 len2)))))
+	    (sitename (bytes-to-str (subseq! v (+ 3 len1) (+ 3 len1 len2)))))
        (list conn-code filename sitename)))
     ((= ir +isc-info-implementation+)
      (list (elt v 1) (elt v 2)))
     ((member ir '(#.+isc-info-version+ #.+isc-info-firebird-version+))
-     (bytes-to-str (subseq v 2 (+ 2 (elt v 1)))))
+     (bytes-to-str (subseq! v 2 (+ 2 (elt v 1)))))
     ((= ir +isc-info-user-names+)
-     (loop for un in v collect (bytes-to-str (subseq un 1))))
+     (loop for un in v collect (bytes-to-str (subseq! un 1))))
     ((member ir +REQ-INT+)
      (bytes-to-long-le v))
     ((member ir +REQ-COUNT+)
      (loop for i from 0 to (1- (length v)) by 6
-	collect (list (bytes-to-long-le (subseq v i (+ 2 i)))
-		      (bytes-to-long-le (subseq v (+ 2 i) (+ 6 i))))))
+	collect (list (bytes-to-long-le (subseq! v i (+ 2 i)))
+		      (bytes-to-long-le (subseq! v (+ 2 i) (+ 6 i))))))
     ((= ir +isc-info-creation-date+)
-     (db-info-creation-date v))
+     (%db-info-creation-date v))
     (t v)))
 
 
@@ -275,14 +275,14 @@
 	   (let (user-names)
 	     (loop
 		(unless (= req +isc-info-user-names+) (return))
-		(setf l (bytes-to-long-le (subseq buf (1+ i) (+ i 3))))
-		(push (subseq buf (+ i 3) (+ i 3 l)) user-names)
+		(setf l (bytes-to-long-le (subseq! buf (1+ i) (+ i 3))))
+		(push (subseq! buf (+ i 3) (+ i 3 l)) user-names)
 		(incf i (+ 3 l))
 		(setf req (elt buf i)))
 	     (push (list (elt ireq ir) (elt ireq ir) (nreverse user-names)) r))
 	   (progn
-	     (setf l (bytes-to-long-le (subseq buf (1+ i) (+ i 3))))
-	     (push (list req (elt ireq ir) (subseq buf (+ i 3) (+ i 3 l))) r)
+	     (setf l (bytes-to-long-le (subseq! buf (1+ i) (+ i 3))))
+	     (push (list req (elt ireq ir) (subseq! buf (+ i 3) (+ i 3 l))) r)
 	     (incf i (+ 3 l))))
        (incf ir)) ; loop
     (values r)))
@@ -373,7 +373,7 @@
     (let ((r nil))
       (loop for (x y v) in (%parse-db-info buf info-requests)
 	 ;; make p-list
-	 do (push (if (/= x +isc-info-error+) (db-info-convert-type y v)) r)
+	 do (push (if (/= x +isc-info-error+) (%db-info-convert-type y v)) r)
 	 do (push y r))
       (values r))))
 
