@@ -59,6 +59,8 @@
 		  (page-size 4096) is-services timeout
 		  isolation-level use-unicode (auth-plugin-name :srp)
 		  (wire-crypt t) create-new timezone)
+  "Establish a connection to database server v.3+ and return connection object.
+DSN format - '[hostname[/port]:]database'"
   (declare (ignorable is-services))
   (let ((conn (make-instance 'connection)))
     (if dsn
@@ -104,6 +106,8 @@
 		      (charset +default-charset+) (port 3050)
 		      (page-size 4096) is-services
 		      isolation-level create-new)
+  "Establish a connection to database server prior v.3 and return connection object.
+DSN format - '[hostname[/port]:]database'"
   (declare (ignorable is-services))
   (let ((conn (make-instance 'connection)))
     (if dsn
