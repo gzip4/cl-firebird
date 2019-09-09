@@ -5,12 +5,12 @@
 (defun %parse-dsn (dsn)
   (let ((i (position #\: dsn)) h p f)
     (if i
-	(let* ((hostport (subseq! dsn 0 i))
+	(let* ((hostport (subseq dsn 0 i))
 	       (j (position #\/ hostport)))
-	  (setf f (subseq! dsn (1+ i)))
+	  (setf f (subseq dsn (1+ i)))
 	  (if j
-	      (setf h (subseq! hostport 0 j)
-		    p (parse-integer (subseq! hostport (1+ j))))
+	      (setf h (subseq hostport 0 j)
+		    p (parse-integer (subseq hostport (1+ j))))
 	      (setf h hostport)))
 	(setf f dsn))
     (values h p f)))
