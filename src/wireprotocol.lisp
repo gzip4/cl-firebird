@@ -208,7 +208,7 @@
 	   (xdr-string (or (slot-value wp 'filename) ""))
 	   (xdr-int32 (length +protocols+))
 	   (xdr-octets (%wp-uid wp auth-plugin wire-crypt))
-	   (write-sequence (apply #'make-bytes +protocols+) s))))
+	   (loop :for p :in +protocols+ :do (write-sequence p s)))))
     (log:trace packet)
     (send-channel wp packet))
   (values))
@@ -242,12 +242,8 @@
 
 
 (defun %parse-status-vector (wp)
-  ;;(log:debug wp)
-  (let ((sql-code 0)
-	(gds-code 0)
-	(gds-codes nil)
-	(message "")
-	(num-arg 0)
+  (let ((sql-code 0) (gds-code 0) (gds-codes nil)
+	(message "") (num-arg 0)
 	(n (recv-int32 wp)))
     (loop
        (when (= n +isc-arg-end+) (return))
@@ -258,7 +254,6 @@
 	    (pushnew gds-code gds-codes)
 	    (string+= message (gethash gds-code *messages* "@1"))
 	    (setf num-arg 0)))
-
 	 ((= +isc-arg-number+ n)
 	  (let ((num (recv-int32 wp)))
 	    (when (= gds-code 335544436)
@@ -267,25 +262,20 @@
 	    (let ((part (format nil "@~a" num-arg))
 		  (strnum (format nil "~a" num)))
 	      (setf message (replace-all message part strnum)))))
-
 	 ((= +isc-arg-string+ n)
 	  (let* ((nbytes (recv-int32 wp))
 		 (s (bytes-to-str (recv-channel wp nbytes t))))
 	    (incf num-arg)
 	    (let ((part (format nil "@~a" num-arg)))
 	      (setf message (replace-all message part s)))))
-
 	 ((= +isc-arg-interpreted+ n)
 	  (let* ((nbytes (recv-int32 wp))
 		 (s (bytes-to-str (recv-channel wp nbytes t))))
 	    (string+= message s)))
-
 	 ((= +isc-arg-sql-state+ n)
 	  (let ((nbytes (recv-int32 wp)))
-	    (recv-channel wp nbytes t))))
-
-       (setf n (recv-int32 wp))) ; end loop
-    
+	    (recv-channel wp nbytes t)))) ; cond
+       (setf n (recv-int32 wp)))	; end loop
     (values gds-codes sql-code message)))
 
 
