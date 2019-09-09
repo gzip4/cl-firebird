@@ -325,7 +325,7 @@
 
 (defun wp-op-response (wp)
   (log:debug wp)
-  (force-output (slot-value wp 'stream))
+  (finish-output (slot-value wp 'stream))
   (let ((op-code (%skip-op-dummy wp)))
     (%skip-lazy-response wp op-code)
     (log:trace op-code)
@@ -978,6 +978,7 @@
 
 (defun wp-op-fetch-response (wp stmt-handle xsqlda)
   (log:debug wp stmt-handle xsqlda)
+  (finish-output (slot-value wp 'stream))
   (let ((op-code (%skip-op-dummy wp)))
     (%skip-lazy-response wp op-code)
     (unless (= op-code +op-fetch-response+)
@@ -1006,6 +1007,7 @@
 
 (defun wp-op-fetch-response-plist (wp stmt-handle xsqlda)
   (log:debug wp stmt-handle xsqlda)
+  (finish-output (slot-value wp 'stream))
   (let ((op-code (%skip-op-dummy wp)))
     (%skip-lazy-response wp op-code)
     (unless (= op-code +op-fetch-response+)
@@ -1035,6 +1037,7 @@
 
 (defun wp-op-sql-response (wp xsqlda)
   (log:debug wp xsqlda)
+  (finish-output (slot-value wp 'stream))
   (let ((op-code (%skip-op-dummy wp)))
     (%skip-lazy-response wp op-code)
     (unless (= op-code +op-sql-response+)
