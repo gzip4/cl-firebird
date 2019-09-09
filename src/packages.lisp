@@ -38,7 +38,6 @@
 	   #:connect*
 	   #:disconnect*
 	   #:disconnected-p*
-	   #:db-info*
 	   #:drop-database*
 
 	   ;; low level

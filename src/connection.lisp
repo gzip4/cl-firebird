@@ -597,10 +597,6 @@ DSN format - '[hostname[/port]:]database'"
       t))
 
 
-(defun db-info* ()
-  (db-info *connection*))
-
-
 (defun drop-database* ()
   ;; XXX: restart-case with confirmation/canceling
   (drop-database *connection*))
