@@ -502,6 +502,33 @@ DSN format - '[hostname[/port]:]database'"
     (values stmt)))
 
 
+(defun %query-params (params)
+  (cond
+    ((member :one-plist params) (values (delete :one-plist params) :one-plist))
+    ((member :one params) (values (delete :one params) :one))
+    ((member :list params) (values (delete :list params) :list))
+    ((member :single params) (values (delete :single params) :single))
+    ((member :plist params) (values (delete :plist params) :plist))))
+
+  
+(defun query (sql &rest params)
+  (check-type sql string)
+  (multiple-value-bind (params r-type)
+      (%query-params params)
+    (with-statement (stmt sql)
+      (statement-execute-list stmt params)
+      (if (statement-open-p stmt)
+	  (let ((r (case r-type
+		     (:one (statement-fetch-one stmt))
+		     (:one-plist (statement-fetch-one stmt t))
+		     (:single (statement-fetch-single stmt))
+		     (:plist (statement-fetch-all stmt t))
+		     (otherwise (statement-fetch-all stmt nil)))))
+	    (values r))
+	  (let ((r (statement-row-count stmt)))
+	    (values r))))))
+
+
 (defun callproc (name &rest params)
   (let* ((p? (make-list (length params) :initial-element #\?))
 	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
