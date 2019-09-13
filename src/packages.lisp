@@ -15,11 +15,11 @@
 	   #:prepare
 	   #:execute
 	   #:execute-many
-	   #:query
 	   #:callproc
 	   #:fetch
 	   #:fetch1
 	   #:fetch!
+	   #:query
 	   #:commit
 	   #:rollback
 	   #:savepoint
@@ -32,6 +32,8 @@
 	   #:with-transaction/ac
 	   #:with-statement
 	   #:row-count
+	   #:blob-create
+	   #:blob-create-temp
 	   #:blob-value
 	   #:isolation-level
 	   #:connection-use-unicode
@@ -74,6 +76,7 @@
 	   #:protocol-accept-version
 	   #:protocol-accept-architecture
 	   #:protocol-accept-type
+	   #:protocol-wire-crypt
 	   #:connection-hostname
 	   #:connection-port
 	   #:connection-timeout

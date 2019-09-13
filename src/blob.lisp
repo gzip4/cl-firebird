@@ -26,6 +26,24 @@
     (values (byte-stream-output val))))
 
 
+(defun blob-create (bytes &optional trans)
+  (let* ((trans (or trans *transaction*))
+	 (conn (connection trans))
+	 (trans-handle (object-handle trans))
+	 (id (%create-blob conn trans-handle bytes :main))
+	 (blob (make-instance 'blob :data bytes :blob-id id)))
+    (values blob)))
+
+
+(defun blob-create-temp (bytes &optional trans)
+  (let* ((trans (or trans *transaction*))
+	 (conn (connection trans))
+	 (trans-handle (object-handle trans))
+	 (id (%create-blob conn trans-handle bytes))
+	 (blob (make-instance 'blob :data bytes :blob-id id)))
+    (values blob)))
+
+
 (defun blob-value (blob &optional trans)
   (let* ((trans (or trans *transaction*))
 	 (conn (connection trans))

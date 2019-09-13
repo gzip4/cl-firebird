@@ -32,7 +32,7 @@
    (accept-type :reader protocol-accept-type)
    (lazy-response-count)
    (db-handle :initform nil :reader object-handle) ;; XXX: refactor to just handle
-   (wire-crypt :initform nil)))
+   (wire-crypt :initform nil :reader protocol-wire-crypt)))
 
 
 (defclass connection (wire-protocol)

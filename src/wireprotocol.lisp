@@ -783,18 +783,20 @@
   (values))
 
 
-(defun %create-blob (wp trans-handle b)
+(defun %create-blob (wp trans-handle b &optional storage)
   (wp-op-create-blob2 wp trans-handle
 		      (make-bytes +isc-bpb-version1+
 				  +isc-bpb-storage+
 				  1
-				  +isc-bpb-storage-main+))
-  (multiple-value-bind (blob-handle blob-id)
+				  (if storage
+				      +isc-bpb-storage-main+
+				      +isc-bpb-storage-temp+)))
+ (multiple-value-bind (blob-handle blob-id)
       (wp-op-response wp)
     (loop :with i = 0 :with blen = (length b)
        :for j = (+ i *blob-segment-size*)
        :while (< i blen)
-       :do (wp-op-put-segment wp blob-handle (subseq b i (min j blen)))
+       :do (wp-op-put-segment wp blob-handle (subseq! b i (min j blen)))
        :do (wp-op-response wp)
        :do (incf i *blob-segment-size*))
     (wp-op-close-blob wp blob-handle)
