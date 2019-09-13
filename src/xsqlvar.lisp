@@ -193,7 +193,7 @@
 	 (let ((tz (%xsqlvar-parse-time-zone (subseq raw-value 4))))
 	   (values (list :time-tz h m s ms :tzinfo tz)))))
       ((= sqltype +sql-type-blob+)
-       (make-blob raw-value sqlsubtype))
+       (make-instance 'blob :blob-id raw-value :subtype sqlsubtype))
       ((= sqltype +sql-type-dec-fixed+)
        (error "dec-fixed"))
       ((= sqltype +sql-type-dec64+)
