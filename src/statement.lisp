@@ -50,6 +50,10 @@
 	      (if plan ", plan" "")))))
 
 
+(defun statement-type* (stmt)
+  (getf +stmt-type+ (statement-type stmt) :unknown))
+
+
 (defun statement-prepare (stmt sql &key explain-plan)
   (let ((conn (connection stmt))
 	(handle (object-handle stmt))
