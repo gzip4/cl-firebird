@@ -53,6 +53,12 @@
 	   #:statement-row-count
 	   #:statement-close
 	   #:statement-drop
+	   #:statement-open-p
+	   #:statement-type
+	   #:statement-type*
+	   #:statement-plan
+	   #:statement-result
+	   #:statement-xsqlda
 	   #:transaction-savepoint
 	   #:transaction-commit
 	   #:transaction-commit-retaining
