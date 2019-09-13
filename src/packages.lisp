@@ -15,6 +15,7 @@
 	   #:prepare
 	   #:execute
 	   #:execute-many
+	   #:query
 	   #:callproc
 	   #:fetch
 	   #:fetch1
