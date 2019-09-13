@@ -2,10 +2,6 @@
 (in-package #:cl-firebird)
 
 
-(defun make-blob (blob-id subtype)
-  (make-instance 'blob :blob-id blob-id :subtype subtype))
-
-
 (defun %blob-bytes (blob-id conn trans-handle)
   (let ((val (byte-stream)))
     (wp-op-open-blob conn blob-id trans-handle)
@@ -52,19 +48,13 @@
 		data))))))
 
 
-(defmethod print-object ((object blob) stream)
-  (when *transaction* (blob-value object))
-  (with-slots (subtype data blob-id)
-      object
-    (print-unreadable-object (object stream :type t :identity nil)
-      (format stream "~a/~a, SIZE: ~a"
-	      (case subtype (0 "BINARY") (1 "TEXT") (t "UNKNOWN"))
-	      (bytes-to-hex blob-id)
-	      (length data))
-      (when data
-	(let ((s (subseq data 0 (min 8 (length data)))))
-	  (if (= subtype 1)
-	      (format stream " [~a...]" (delete #\Newline s))
-	      (format stream " [#x~a...]" (bytes-to-hex s))))))))
+(defmethod print-object ((blob blob) stream)
+  (with-slots (subtype blob-id) blob
+    (print-unreadable-object (blob stream :type nil :identity nil)
+      (format stream "BLOB ~a/~a"
+	      (case subtype (0 "BINARY") (1 "TEXT") (t subtype))
+	      (if blob-id (bytes-to-hex blob-id))))))
+
+
 
 

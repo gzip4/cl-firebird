@@ -337,6 +337,22 @@
 (defconstant +isc-tpb-no-auto-undo+ 20)
 (defconstant +isc-tpb-lock-timeout+ 21)
 
+;; Blob Parameter Block
+
+(defconstant +isc-bpb-version1+                  1)
+(defconstant +isc-bpb-source-type+               1)
+(defconstant +isc-bpb-target-type+               2)
+(defconstant +isc-bpb-type+                      3)
+(defconstant +isc-bpb-source-interp+             4)
+(defconstant +isc-bpb-target-interp+             5)
+(defconstant +isc-bpb-filter-parameter+          6)
+(defconstant +isc-bpb-storage+                   7)
+
+(defconstant +isc-bpb-type-segmented+            0)
+(defconstant +isc-bpb-type-stream+               1)
+(defconstant +isc-bpb-storage-main+              0)
+(defconstant +isc-bpb-storage-temp+              2)
+
 
 ;; Operation (packet) types
 (defconstant +op-void+ 0)

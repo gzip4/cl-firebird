@@ -79,6 +79,6 @@
 
 
 (defclass blob ()
-  ((blob-id :initarg :blob-id :reader blob-id)
-   (subtype :initarg :subtype :reader blob-subtype)
-   (data :initform nil :reader blob-data)))
+  ((blob-id :initform nil :initarg :blob-id :reader blob-id)
+   (subtype :initform 0 :initarg :subtype :reader blob-subtype)
+   (data :initform nil :initarg :data :reader blob-data)))
