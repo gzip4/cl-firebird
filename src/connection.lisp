@@ -508,25 +508,32 @@ DSN format - '[hostname[/port]:]database'"
     ((member :one params) (values (delete :one params) :one))
     ((member :list params) (values (delete :list params) :list))
     ((member :single params) (values (delete :single params) :single))
-    ((member :plist params) (values (delete :plist params) :plist))))
+    ((member :plist params) (values (delete :plist params) :plist))
+    (t (values params :list))))
 
   
 (defun query (sql &rest params)
   (check-type sql string)
-  (multiple-value-bind (params r-type)
+  (multiple-value-bind (params1 r-type)
       (%query-params params)
     (with-statement (stmt sql)
-      (statement-execute-list stmt params)
-      (if (statement-open-p stmt)
-	  (let ((r (case r-type
-		     (:one (statement-fetch-one stmt))
-		     (:one-plist (statement-fetch-one stmt t))
-		     (:single (statement-fetch-single stmt))
-		     (:plist (statement-fetch-all stmt t))
-		     (otherwise (statement-fetch-all stmt nil)))))
-	    (values r))
-	  (let ((r (statement-row-count stmt)))
-	    (values r))))))
+      (statement-execute-list stmt params1)
+      (case (statement-type* stmt)
+	(:SELECT
+	 (let ((r (case r-type
+		    (:one (statement-fetch-one stmt))
+		    (:one-plist (statement-fetch-one stmt t))
+		    (:single (statement-fetch-single stmt))
+		    (:plist (statement-fetch-all stmt t))
+		    (otherwise (statement-fetch-all stmt nil)))))
+	   (values r)))
+	(:EXEC-PROCEDURE
+	 (let ((r1 (statement-result stmt))
+	       (r2 (statement-row-count stmt)))
+	   (values r1 r2)))
+	(otherwise
+	 (let ((r (statement-row-count stmt)))
+	   (values r)))))))
 
 
 (defun callproc (name &rest params)
