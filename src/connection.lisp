@@ -517,23 +517,29 @@ DSN format - '[hostname[/port]:]database'"
   (multiple-value-bind (params1 r-type)
       (%query-params params)
     (with-statement (stmt sql)
-      (statement-execute-list stmt params1)
-      (case (statement-type* stmt)
-	(:SELECT
-	 (let ((r (case r-type
-		    (:one (statement-fetch-one stmt))
-		    (:one-plist (statement-fetch-one stmt t))
-		    (:single (statement-fetch-single stmt))
-		    (:plist (statement-fetch-all stmt t))
-		    (otherwise (statement-fetch-all stmt nil)))))
-	   (values r)))
-	(:EXEC-PROCEDURE
-	 (let ((r1 (statement-result stmt))
-	       (r2 (statement-row-count stmt)))
-	   (values r1 r2)))
-	(otherwise
-	 (let ((r (statement-row-count stmt)))
-	   (values r)))))))
+      (let ((rv (statement-execute-list stmt params1)))
+	(case (statement-type* stmt)
+	  (:select
+	   (let ((r (case r-type
+		      (:one (statement-fetch-one stmt))
+		      (:one-plist (statement-fetch-one stmt t))
+		      (:single (statement-fetch-single stmt))
+		      (:plist (statement-fetch-all stmt t))
+		      (otherwise (statement-fetch-all stmt nil)))))
+	     (values r)))
+	  (:exec-procedure
+	   (let ((r1 (statement-result stmt))
+		 (r2 (statement-row-count stmt)))
+	     (values r1 r2)))
+	  (:ddl (values t))
+	  (:set-generator (values t))
+	  (:start-trans (values rv))
+	  (:commit (values rv))
+	  (:rollback (values rv))
+	  (:savepoint (values rv))
+	  (otherwise
+	   (let ((r (statement-row-count stmt)))
+	     (values r))))))))
 
 
 (defun callproc (name &rest params)

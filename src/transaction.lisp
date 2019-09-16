@@ -182,8 +182,9 @@
 
 
 (defmethod print-object ((object transaction) stream)
-  (print-unreadable-object (object stream :type t :identity t)
-     ))
+  (print-unreadable-object (object stream :type nil :identity t)
+    (with-slots (handle) object
+      (format stream "TRANSACTION ~a" handle))))
 
 
 (defun execute-immediate (query trans)

@@ -43,11 +43,13 @@
 
 (defmethod print-object ((object statement) stream)
   (print-unreadable-object (object stream :type t :identity t)
-    (with-slots (handle open stmt-type plan)
-	object
-      (format stream "[~a] ~a/~a~a" handle (getf +stmt-type+ stmt-type)
-	      (if open "OPEN" "CLOSE")
-	      (if plan ", plan" "")))))
+    (with-slots (handle open stmt-type plan) object
+      (let ((typ (getf +stmt-type+ stmt-type)))
+	(format stream "[~a] ~a~a~a" handle typ
+		(if (member typ '(:select :select-for-upd))
+		    (if open "/OPEN" "/CLOSE")
+		    "")
+		(if plan ", plan" ""))))))
 
 
 (defun statement-type* (stmt)
@@ -58,6 +60,8 @@
   (let ((conn (connection stmt))
 	(handle (object-handle stmt))
 	(trans-handle (object-handle (transaction stmt))))
+    (unless trans-handle
+      (error "Statement is bound to inactive transaction"))
     (setf (slot-value stmt 'plan) nil)
     (wp-op-prepare-statement conn handle trans-handle sql
 			     (if explain-plan +isc-info-sql-get-plan+))
@@ -102,27 +106,44 @@
 (defun %statement-execute-other (stmt params)
   (wp-op-execute (connection stmt)
 		 (object-handle stmt)
-		 (object-handle (transaction stmt))
+		 (if (= (statement-type stmt) +isc-info-sql-stmt-start-trans+)
+		     0
+		     (object-handle (transaction stmt)))
 		 (%statement-convert-params params))
-  (when (= (statement-type stmt) +isc-info-sql-stmt-select+)
+  (when (or (= (statement-type stmt) +isc-info-sql-stmt-select+)
+	    (= (statement-type stmt) +isc-info-sql-stmt-select-for-upd+))
     (setf (slot-value stmt 'open) t)))
 
 
 (defun statement-execute-list (stmt &optional params)
   (unless (statement-type stmt) (error "Statement not prepared"))
+  (unless (object-handle (transaction stmt))
+    (error "Statement is bound to inactive transaction"))
   (if (= (statement-type stmt) +isc-info-sql-stmt-exec-procedure+)
       (%statement-execute-proc stmt params)
       (%statement-execute-other stmt params))
-  (block out
-    (handler-bind ((operational-error
-		    (lambda (e)
-		      (setf (slot-value stmt 'open) nil)
-		      ;; Attempt to reopen an open cursor
-		      (when (member 335544576 (error-gds-codes e))
-			(return-from out)))))
-      (wp-op-response (connection stmt))))
-  (setf (slot-value (transaction stmt) 'dirty) t)
-  (values stmt))
+  (let (handle)
+    (block out
+      (handler-bind ((operational-error
+		      (lambda (e)
+			(setf (slot-value stmt 'open) nil)
+			;; Attempt to reopen an open cursor
+			(when (member 335544576 (error-gds-codes e))
+			  (return-from out)))))
+	(setf handle (wp-op-response (connection stmt)))))
+    (cond
+      ((= (statement-type stmt) +isc-info-sql-stmt-start-trans+)
+       (let ((new-trans (make-instance 'transaction :conn (connection stmt))))
+	 (setf (slot-value new-trans 'handle) (if (>= handle 0) handle))
+	 (values new-trans)))
+      ((or (= (statement-type stmt) +isc-info-sql-stmt-commit+)
+	   (= (statement-type stmt) +isc-info-sql-stmt-rollback+))
+       (setf (slot-value (transaction stmt) 'dirty) nil)
+       (setf (slot-value (transaction stmt) 'handle) nil)
+       (values (transaction stmt)))
+      (t 
+       (setf (slot-value (transaction stmt) 'dirty) t)
+       (values stmt)))))
 
 
 (defun statement-execute (stmt &rest params)
