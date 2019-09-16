@@ -470,7 +470,7 @@ DSN format - '[hostname[/port]:]database'"
 
 
 (defun prepare (sql &key explain-plan)
-  (statement-prepare (make-statement *transaction*)
+  (statement-prepare (make-instance 'statement :transaction *transaction*)
 		     sql :explain-plan explain-plan))
 
 
@@ -490,14 +490,14 @@ DSN format - '[hostname[/port]:]database'"
 (defun execute (query &rest params)
   (let ((stmt (etypecase query
 		(statement query)
-		(string (statement-prepare (make-statement *transaction*) query)))))
+		(string (prepare query)))))
     (statement-execute-list stmt params)))
     
 
 (defun execute-many (query params)
   (let ((stmt (etypecase query
 		(statement query)
-		(string (statement-prepare (make-statement *transaction*) query)))))
+		(string (prepare query)))))
     (loop :for p :in params :do (statement-execute-list stmt p))
     (values stmt)))
 
@@ -545,7 +545,7 @@ DSN format - '[hostname[/port]:]database'"
 (defun callproc (name &rest params)
   (let* ((p? (make-list (length params) :initial-element #\?))
 	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
-	 (stmt (statement-prepare (make-statement *transaction*) sql)))
+	 (stmt (prepare sql)))
     (unwind-protect
 	 (progn
 	   (statement-execute-list stmt params)

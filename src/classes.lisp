@@ -69,10 +69,11 @@
 
 
 (defclass statement ()
-  ((trans :initarg :trans :accessor transaction)
-   (handle :initform nil :reader object-handle)
+  ((trans :initarg :transaction :accessor transaction)
+   (handle :initform nil :initarg :handle :reader object-handle)
    (open :initform nil :reader statement-open-p)
    (stmt-type :initform nil :reader statement-type)
+   (sql :initform nil :initarg :sql :reader statement-sql)
    (plan :initform nil :reader statement-plan)
    (result :initform nil :reader statement-result)
    (xsqlda :initform nil :reader statement-xsqlda)))

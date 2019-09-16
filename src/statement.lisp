@@ -37,10 +37,6 @@
   (values stmt))
 
 
-(defun make-statement (transaction)
-  (statement-allocate (make-instance 'statement :trans transaction)))
-
-
 (defmethod print-object ((object statement) stream)
   (print-unreadable-object (object stream :type t :identity t)
     (with-slots (handle open stmt-type plan) object
@@ -56,14 +52,44 @@
   (getf +stmt-type+ (statement-type stmt) :unknown))
 
 
+(defun statement-close (stmt)
+  (let ((conn (connection stmt)))
+    (when (and (statement-type stmt)
+	       (= (statement-type stmt) +isc-info-sql-stmt-select+)
+	       (statement-open-p stmt))
+      (wp-op-free-statement conn (object-handle stmt) +dsql-close+)
+      (with-slots (accept-type lazy-response-count) conn
+	(if (= accept-type +ptype-lazy-send+)
+	    (incf lazy-response-count)
+	    (wp-op-response conn)))))
+  (setf (slot-value stmt 'open) nil)
+  (values stmt))
+
+
+(defun statement-drop (stmt)
+  (let ((conn (connection stmt)))
+    (when (and (object-handle stmt) (/= (object-handle stmt) -1))
+      (wp-op-free-statement conn (object-handle stmt) +dsql-drop+)
+      (with-slots (accept-type lazy-response-count) conn
+	(if (= accept-type +ptype-lazy-send+)
+	    (incf lazy-response-count)
+	    (wp-op-response conn)))))
+  (setf (slot-value stmt 'open) nil
+	(slot-value stmt 'handle) nil)
+  (values stmt))
+
+
 (defun statement-prepare (stmt sql &key explain-plan)
   (let ((conn (connection stmt))
-	(handle (object-handle stmt))
 	(trans-handle (object-handle (transaction stmt))))
     (unless trans-handle
       (error "Statement is bound to inactive transaction"))
+    (when (and (object-handle stmt) (statement-open-p stmt))
+      (statement-close stmt))
+    (statement-allocate stmt)		; allocate if handle is nil
     (setf (slot-value stmt 'plan) nil)
-    (wp-op-prepare-statement conn handle trans-handle sql
+    (setf (slot-value stmt 'sql) sql)
+    (wp-op-prepare-statement conn (object-handle stmt) trans-handle sql
 			     (if explain-plan +isc-info-sql-get-plan+))
     (with-slots (lazy-response-count) conn
       (unless (zerop lazy-response-count)
@@ -79,7 +105,7 @@
 	  (setf (slot-value stmt 'plan) (bytes-to-str (subseq! buf (+ i 3) (+ i 3 l))))
 	  (incf i (+ 3 l)))
 	(multiple-value-bind (stmt-type xsqlda)
-	    (xsqlvar-parse-xsqlda (subseq! buf i) conn (slot-value stmt 'handle))
+	    (xsqlvar-parse-xsqlda (subseq! buf i) conn (object-handle stmt))
 	  (setf (slot-value stmt 'stmt-type) stmt-type)
 	  (setf (slot-value stmt 'xsqlda) xsqlda)))))
   (values stmt))
@@ -140,7 +166,7 @@
 	   (= (statement-type stmt) +isc-info-sql-stmt-rollback+))
        (setf (slot-value (transaction stmt) 'dirty) nil)
        (setf (slot-value (transaction stmt) 'handle) nil)
-       (values (transaction stmt)))
+       (values stmt))
       (t 
        (setf (slot-value (transaction stmt) 'dirty) t)
        (values stmt)))))
@@ -170,18 +196,23 @@
 	      (pop rows)))))))
 
 
-(defun statement-fetch-one (stmt &optional plist)
+(defun statement-fetch-row (stmt &optional plist)
   (let* ((xsqlda (statement-xsqlda stmt))
 	 (handle (object-handle stmt))
 	 (conn (connection stmt))
 	 (blr (xsqlvar-calc-blr (statement-xsqlda stmt))))
     (wp-op-fetch conn handle blr 1)
-    (multiple-value-bind (rows)
+    (multiple-value-bind (rows more-data)
 	(if plist
 	    (wp-op-fetch-response-plist conn handle xsqlda)
 	    (wp-op-fetch-response conn handle xsqlda))
-      (statement-close stmt)
-      (values (first rows) stmt))))
+      (values (first rows) more-data stmt))))
+
+
+(defun statement-fetch-one (stmt &optional plist)
+  (let ((row (statement-fetch-row stmt plist)))
+    (statement-close stmt)
+    (values row stmt)))
 
 
 (defun statement-fetch-single (stmt)
@@ -223,29 +254,3 @@
 	(log:trace count)
 	(values count stmt)))))
 
-
-(defun statement-close (stmt)
-  (let ((conn (connection stmt)))
-    (when (and (statement-type stmt)
-	       (= (statement-type stmt) +isc-info-sql-stmt-select+)
-	       (statement-open-p stmt))
-      (wp-op-free-statement conn (object-handle stmt) +dsql-close+)
-      (with-slots (accept-type lazy-response-count) conn
-	(if (= accept-type +ptype-lazy-send+)
-	    (incf lazy-response-count)
-	    (wp-op-response conn)))))
-  (setf (slot-value stmt 'open) nil)
-  (values stmt))
-
-
-(defun statement-drop (stmt)
-  (let ((conn (connection stmt)))
-    (when (and (object-handle stmt) (/= (object-handle stmt) -1))
-      (wp-op-free-statement conn (object-handle stmt) +dsql-drop+)
-      (with-slots (accept-type lazy-response-count) conn
-	(if (= accept-type +ptype-lazy-send+)
-	    (incf lazy-response-count)
-	    (wp-op-response conn)))))
-  (setf (slot-value stmt 'open) nil
-	(slot-value stmt 'handle) nil)
-  (values stmt))

@@ -44,11 +44,11 @@
 	   #:drop-database*
 
 	   ;; low level
-	   #:make-statement
 	   #:statement-prepare
 	   #:statement-execute
 	   #:statement-execute-list
 	   #:statement-make-fetcher
+	   #:statement-fetch-row
 	   #:statement-fetch-one
 	   #:statement-fetch-single
 	   #:statement-fetch-all
@@ -59,6 +59,7 @@
 	   #:statement-type
 	   #:statement-type*
 	   #:statement-plan
+	   #:statement-sql
 	   #:statement-result
 	   #:statement-xsqlda
 	   #:transaction-savepoint

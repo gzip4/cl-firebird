@@ -333,7 +333,10 @@
       (error 'operational-error :msg "Unauthorized"))
     (when (/= op-code +op-response+)
       (error "InternalError: wp-op-response:op_code = ~a" op-code)))
-  (%parse-op-response wp))
+  (multiple-value-bind (h oid buf)
+      (%parse-op-response wp)
+    (log:debug h oid buf)
+    (values h oid buf)))
 
 
 (defun %wp-op-accept/wire-crypt (wp auth-data session-key)
@@ -983,7 +986,7 @@
 
 (defun wp-op-fetch (wp stmt-handle blr &optional count)
   (unless count (setf count *default-fetch-size*))
-  (log:debug wp stmt-handle blr)
+  (log:debug wp stmt-handle blr count)
   (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-fetch+)
 		  (xdr-int32 stmt-handle)
