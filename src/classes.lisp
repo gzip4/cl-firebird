@@ -63,7 +63,7 @@
 
 (defclass transaction ()
   ((connection :initarg :conn :reader connection)
-   (handle :initform nil :reader object-handle)
+   (handle :initform nil :initarg :handle :reader object-handle)
    (auto-commit :initform nil :reader auto-commit-p :initarg :auto-commit)
    (dirty :initform nil :reader transaction-dirty-p)))
 
