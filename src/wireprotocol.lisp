@@ -998,8 +998,15 @@
   (values))
 
 
-(defun %kw (x)
-  (intern (string-upcase x) :keyword))
+(defun %kw (s)
+  (let ((str (string s)))
+    (if (zerop (length str))
+	nil
+	(prog1 (intern (case *print-case*
+			 (:upcase (string-upcase str))
+			 (:downcase (string-downcase str))
+			 (otherwise str))
+		       :keyword)))))
 
 
 (defun %make-null-indicator (wp xsqlda)
