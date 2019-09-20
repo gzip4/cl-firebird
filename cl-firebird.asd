@@ -27,6 +27,7 @@
 			       (:file "srp")
 			       (:file "classes")
 			       (:file "wireprotocol")
+			       (:file "wtest")
 			       (:file "blob")
 			       (:file "xsqlvar")
 			       (:file "transaction")
