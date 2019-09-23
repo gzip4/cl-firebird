@@ -1545,3 +1545,16 @@
     (values info)))
 
 
+(defun list-all-tables* (attachment)
+  "Returns a list of all user-defined relations."
+  (let ((c (query* attachment "SELECT RDB$RELATION_NAME FROM RDB$RELATIONS
+WHERE RDB$SYSTEM_FLAG = 0 ORDER BY 1")) result)
+    (loop
+       (multiple-value-bind (r more)
+	   (cursor-fetch-many c 200)
+	 (setf result (nconc result r))
+	 (unless more (return))))
+    (values result)))
+
+
+
