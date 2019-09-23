@@ -744,7 +744,6 @@
   (let (op-code)
     (setf op-code (fb-op-dummy wp))
     (setf op-code (fb-op-lazy wp op-code))
-
     (when (= op-code +op-cont-auth+)
       (error 'operational-error :msg "Unauthorized"))
     (when (/= op-code +op-response+)
@@ -757,14 +756,14 @@
 
 
 (defparameter +isolation-level+
-  (list :read-commited-legacy
+  (list :read-committed-legacy
 	(vector
 	 +isc-tpb-version3+
 	 +isc-tpb-write+
 	 +isc-tpb-wait+
 	 +isc-tpb-read-committed+
 	 +isc-tpb-no-rec-version+)
-	:read-commited
+	:read-committed
 	(vector
 	 +isc-tpb-version3+
 	 +isc-tpb-write+
@@ -789,7 +788,7 @@
 	 +isc-tpb-write+
 	 +isc-tpb-wait+
 	 +isc-tpb-consistency+)
-	:read-commited-ro
+	:read-committed-ro
 	(vector
 	 +isc-tpb-version3+
 	 +isc-tpb-read+
@@ -1406,7 +1405,11 @@
 	    (xdr-int32 (or incarnation 0))
 	    (xdr-octets items)
 	    (xdr-int32 +wp-buffer-length+)))
-    (fb-send-channel (attachment-protocol attachment) packet)))
+    (fb-send-channel (attachment-protocol attachment) packet))
+  (multiple-value-bind (h oid buf)
+      (fb-op-response (attachment-protocol attachment))
+    (declare (ignore h oid))
+    (values buf)))
 
 
 (defun fb-parse-trans-info (buf ireq)
@@ -1427,26 +1430,23 @@
 
 (defun fb-transaction-info (attachment info-requests)
   (setf info-requests (check-info-requests info-requests))
-  (fb-info-request attachment +op-info-transaction+
-		   (attachment-transaction attachment)
-		   info-requests)
-  (multiple-value-bind (h oid buf)
-      (fb-op-response (attachment-protocol attachment))
-    (declare (ignore h oid))
-    (let ((r (fb-parse-trans-info buf info-requests))
-	  (res nil)
-	  (tr-type (list 1 :snapshot-table-stability 2 :snapshot 3 :read-commited))
-	  (tr-subtype (list 0 :no-record-version 1 :record-version)))
-      (loop for (x y z) in r
-	 do (setf (getf res y)
-		  (cond
-		    ((= x +isc-info-tra-isolation+)
-		     (if (> (length z) 1)
-			 (cons (getf tr-type (elt z 0)) (getf tr-subtype (elt z 1)))
-			 (getf tr-type (elt z 0))))
-		    ((= x +isc-info-error+) nil)
-		    (t (bytes-to-int-le z)))))
-      (values res))))
+  (let* ((buf (fb-info-request attachment +op-info-transaction+
+			       (attachment-transaction attachment)
+			       info-requests))
+	 (r (fb-parse-trans-info buf info-requests))
+	 (res nil)
+	 (tr-type (list 1 :snapshot-table-stability 2 :snapshot 3 :read-committed))
+	 (tr-subtype (list 0 :no-record-version 1 :record-version)))
+    (loop for (x y z) in r
+       do (setf (getf res y)
+		(cond
+		  ((= x +isc-info-tra-isolation+)
+		   (if (> (length z) 1)
+		       (cons (getf tr-type (elt z 0)) (getf tr-subtype (elt z 1)))
+		       (getf tr-type (elt z 0))))
+		  ((= x +isc-info-error+) nil)
+		  (t (bytes-to-int-le z)))))
+    (values res)))
 
 
 (defun trans-info (attachment)
@@ -1459,18 +1459,15 @@
 
 (defun fb-db-info (attachment info-requests)
   (setf info-requests (check-info-requests info-requests))
-  (fb-info-request attachment +op-info-database+
-		   (object-handle attachment)
-		   info-requests)
-  (multiple-value-bind (h oid buf)
-      (fb-op-response (attachment-protocol attachment))
-    (declare (ignore h oid))
-    (let ((r nil))
-      (loop for (x y v) in (%parse-db-info buf info-requests)
-	 ;; make p-list
-	 do (push (if (/= x +isc-info-error+) (%db-info-convert-type y v)) r)
-	 do (push y r))
-      (values r))))
+  (let ((r nil)
+	(buf (fb-info-request attachment +op-info-database+
+			      (object-handle attachment)
+			      info-requests)))
+    (loop :for (x y v) :in (%parse-db-info buf info-requests)
+       ;; make p-list
+       :do (push (if (/= x +isc-info-error+) (%db-info-convert-type y v)) r)
+       :do (push y r))
+    (values r)))
 
 
 (defun db-info* (attachment)
