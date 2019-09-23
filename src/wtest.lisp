@@ -1239,6 +1239,35 @@
       (values (nreverse rows) (/= status 100)))))
 
 
+(defun fb-fetch (wp handle xsqlda &optional count)
+  (unless count (setf count *default-fetch-size*))
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-fetch+)
+		  (xdr-int32 handle)
+		  (xdr-octets (xsqlvar-calc-blr xsqlda))
+		  (xdr-int32 0)
+		  (xdr-int32 count))))
+    (fb-send-channel wp packet))
+  (finish-output (slot-value wp 'stream))
+  (let (op-code)
+    (setf op-code (fb-op-dummy wp))
+    (setf op-code (fb-op-lazy wp op-code))
+    (unless (= op-code +op-fetch-response+)
+      (when (= op-code +op-response+)
+	(fb-parse-op-response wp))
+      (error "op_fetch_response: op-code = ~a" op-code))
+    (let ((status (fb-recv-int32 wp))
+	  (count (fb-recv-int32 wp))
+	  rows)
+      (loop
+	 (when (zerop count) (return))
+	 (push (fb-op-fetch-row wp xsqlda) rows)
+	 (setf op-code (fb-recv-int32 wp)
+	       status (fb-recv-int32 wp)
+	       count (fb-recv-int32 wp)))
+      (values (nreverse rows) (/= status 100)))))
+
+
 (defun query* (attachment sql &rest params)
   (multiple-value-bind (handle type xsqlda)
       (block b1
@@ -1269,7 +1298,6 @@
 		    (xdr-int32 0))
 		  (multiple-value-bind (blr vals)
 		      (fb-params-to-blr/2 (attachment-protocol attachment) params)
-		    (log:debug "blr vals: ~a ~a" blr vals)
 		    (xdr-octets blr)
 		    (xdr-int32 0)
 		    (xdr-int32 1)
@@ -1304,6 +1332,55 @@
       (values result type count))))
 
 
+(defun execute/many (attachment sql params-list)
+  (when params-list
+    (multiple-value-bind (handle type xsqlda)
+	(block b1
+	  (handler-bind
+	      ((operational-error
+		(lambda (e)
+		  ;; invalid transaction handle
+		  (when (member 335544332 (error-gds-codes e))
+		    (setf (slot-value attachment 'trans) nil)
+		    (return-from b1 (prepare* attachment sql :explain-plan nil))))))
+	    (prepare* attachment sql :explain-plan nil)))
+      (setf type (getf +stmt-type+ type :unknown))
+      (ecase type (:insert) (:update) (:delete) (:exec-procedure))
+      (let (packet result (op +op-execute+))
+	(loop :for params :in params-list
+	   :do (progn
+		 (setf params (%statement-convert-params params))
+		 (when (eq type :exec-procedure)
+		   (setf op +op-execute2+))
+		 (setf packet
+		       (with-byte-stream (s)
+			 (xdr-int32 op)
+			 (xdr-int32 handle)
+			 (xdr-int32 (attachment-transaction attachment))
+			 (if (zerop (length params))
+			     (progn
+			       (xdr-octets #())
+			       (xdr-int32 0)
+			       (xdr-int32 0))
+			     (multiple-value-bind (blr vals)
+				 (fb-params-to-blr/2 (attachment-protocol attachment) params)
+			       (xdr-octets blr)
+			       (xdr-int32 0)
+			       (xdr-int32 1)
+			       (write-sequence vals s)))
+			 (when (eq type :exec-procedure)
+			   (xdr-octets (xsqlvar-calc-blr xsqlda))
+			   (xdr-int32 0))))
+		 (fb-send-channel (attachment-protocol attachment) packet)
+		 (when (eq type :exec-procedure)
+		   (push (fb-op-sql-response (attachment-protocol attachment) xsqlda) result))
+		 (fb-op-response (attachment-protocol attachment))
+		 (unless (eq type :exec-procedure)
+		   (push (fb-row-count attachment handle nil) result))))
+	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+)
+	(values result type)))))
+
+
 (defun cursor-close (cursor)
   (if (object-handle cursor)
       (progn
@@ -1316,20 +1393,30 @@
 
 (defun cursor-fetch-row (cursor &key plist)
   (if (object-handle cursor)
-      (progn
-	(fb-op-fetch (cursor-protocol cursor)
-		     (object-handle cursor)
-		     (xsqlvar-calc-blr (cursor-xsqlda cursor))
-		     1)			; count
-	(multiple-value-bind (rows more-data)
-	    (fb-op-fetch-response (cursor-protocol cursor) (cursor-xsqlda cursor))
-	  (unless more-data (cursor-close cursor))
-	  (let ((r (car rows)))
-	    (when (and r plist)
-	      (setf r (loop :for v :in r :for x :in (cursor-xsqlda cursor)
-			 :collect (list (%kw (xsqlvar-aliasname x)) v)))
-	      (setf r (flatten r)))
-	    (values r more-data))))
+      (multiple-value-bind (rows more-data)
+	  (fb-fetch (cursor-protocol cursor)
+		    (object-handle cursor)
+		    (cursor-xsqlda cursor)
+		    1)
+	(unless more-data (cursor-close cursor))
+	(let ((r (car rows)))
+	  (when (and r plist)
+	    (setf r (loop :for v :in r :for x :in (cursor-xsqlda cursor)
+		       :collect (list (%kw (xsqlvar-aliasname x)) v)))
+	    (setf r (flatten r)))
+	  (values r more-data)))
+      (error 'operational-error :msg "Cursor is closed.")))
+
+
+(defun cursor-fetch-many (cursor &optional count)
+  (if (object-handle cursor)
+      (multiple-value-bind (rows more-data)
+	  (fb-fetch (cursor-protocol cursor)
+		    (object-handle cursor)
+		    (cursor-xsqlda cursor)
+		    (or count 1))
+	(unless more-data (cursor-close cursor))
+	(values rows more-data))
       (error 'operational-error :msg "Cursor is closed.")))
 
 
