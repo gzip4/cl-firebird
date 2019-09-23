@@ -1391,6 +1391,24 @@
     (values res)))
 
 
+;; case op_info_blob:
+;; case op_info_database:
+;; case op_info_request:
+;; case op_info_transaction:
+;; case op_service_info:
+;; case op_info_sql:
+(defun fb-info-request (attachment operation object items &key incarnation)
+  (let (packet)
+    (setf packet
+	  (with-byte-stream (s)
+	    (xdr-int32 operation)
+	    (xdr-int32 object)
+	    (xdr-int32 (or incarnation 0))
+	    (xdr-octets items)
+	    (xdr-int32 +wp-buffer-length+)))
+    (fb-send-channel (attachment-protocol attachment) packet)))
+
+
 (defun fb-parse-trans-info (buf ireq)
   (let ((buflen (length buf))
 	(i 0) (ir 0) req r l)
@@ -1409,13 +1427,9 @@
 
 (defun fb-transaction-info (attachment info-requests)
   (setf info-requests (check-info-requests info-requests))
-  (let ((packet (with-byte-stream (s)
-		  (xdr-int32 +op-info-transaction+)
-		  (xdr-int32 (attachment-transaction attachment))
-		  (xdr-int32 0)
-		  (xdr-octets info-requests)
-		  (xdr-int32 +wp-buffer-length+))))
-    (fb-send-channel (attachment-protocol attachment) packet))
+  (fb-info-request attachment +op-info-transaction+
+		   (attachment-transaction attachment)
+		   info-requests)
   (multiple-value-bind (h oid buf)
       (fb-op-response (attachment-protocol attachment))
     (declare (ignore h oid))
