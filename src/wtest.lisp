@@ -748,7 +748,7 @@
     (when (= op-code +op-cont-auth+)
       (error 'operational-error :msg "Unauthorized"))
     (when (/= op-code +op-response+)
-      (error "InternalError: wp-op-response:op_code = ~a" op-code))
+      (error "InternalError: op-response:op_code = ~a" op-code))
     (multiple-value-bind (h oid buf)
 	(fb-parse-op-response wp)
       ;;(log:debug h oid buf)
@@ -856,7 +856,12 @@
   (when (and auto-commit (not (find +isc-tpb-autocommit+ tpb)))
     (setf tpb (concatenate 'vector tpb #(#.+isc-tpb-autocommit+))))
   (when (attachment-transaction attachment)
-    (fb-release-object attachment (attachment-transaction attachment) +op-rollback+)
+    (handler-case
+	(fb-release-object attachment (attachment-transaction attachment) +op-rollback+)
+      (operational-error (e)
+	;; invalid transaction handle
+	(when (member 335544332 (error-gds-codes e))
+	  :ignore)))
     (setf (slot-value attachment 'trans) nil))
   (let ((packet
 	 (with-byte-stream (s)
@@ -887,6 +892,11 @@
     (fb-release-object attachment (attachment-transaction attachment) +op-rollback+)
     (setf (slot-value attachment 'trans) nil)))
 
+
+(defmethod (setf attachment-isolation-level) :before (value (attachment attachment))
+  (unless (eql (attachment-isolation-level attachment) value)
+    (rollback* attachment)))
+	   
 
 (defun fb-op-info-sql (wp stmt-handle vars)
   (let ((packet (with-byte-stream (s)
@@ -1216,10 +1226,16 @@
 
 (defun query* (attachment sql &rest params)
   (multiple-value-bind (handle type xsqlda)
-      (prepare* attachment sql :explain-plan nil)
+      (handler-case
+	  (prepare* attachment sql :explain-plan nil)
+	(operational-error (e)
+	  ;; invalid transaction handle
+	  (when (member 335544332 (error-gds-codes e))
+	    (setf (slot-value attachment 'trans) nil)
+	    (prepare* attachment sql :explain-plan nil))))
     (setf type (getf +stmt-type+ type :unknown))
     (setf params (%statement-convert-params params))
-    (let (packet result (op +op-execute+) h count)
+    (let (packet result (op +op-execute+) h (count 0))
       (when (eq type :exec-procedure)
 	(setf op +op-execute2+))
       (setf packet
@@ -1248,8 +1264,6 @@
       (when (eq type :exec-procedure)
 	(setf result (fb-op-sql-response (attachment-protocol attachment) xsqlda)))
       (setf h (fb-op-response (attachment-protocol attachment))) ; XXX: what is it?
-      (setf count (fb-row-count (attachment-protocol attachment) handle
-				(find type (list :select :select-for-upd))))
       (case type
 	((:select :select-for-upd)
 	 (setf result (make-instance 'cursor
@@ -1257,13 +1271,17 @@
 				     :handle handle
 				     :xsqlda xsqlda)))
 	((:commit :rollback)
+	 (setf result t)
 	 (setf (slot-value attachment 'trans) nil))
 	(:start-trans
 	 (fbsql::fb-release-object
 	  attachment
 	  (attachment-transaction attachment)
 	  +op-rollback+)
-	 (setf (slot-value attachment 'trans) h)))
+	 (setf (slot-value attachment 'trans) h)
+	 (setf result h))
+	(otherwise
+	 (setf count (fb-row-count (attachment-protocol attachment) handle nil))))
       (unless (find type (list :select :select-for-upd))
 	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+))
       (values result type count))))
@@ -1311,21 +1329,44 @@
 
 (defun sql (attachment sql)
   "Execute SQL immediate."
-  (check-transaction attachment)
-  (let (packet)
-    (setf packet
-	  (with-byte-stream (s)
-	    (xdr-int32 +op-exec-immediate+)
-	    (xdr-int32 (attachment-transaction attachment))
-	    (xdr-int32 (object-handle attachment))
-	    (xdr-int32 3)		; dialect = 3
-	    (xdr-string sql)
-	    (xdr-octets #())
-	    (xdr-int32 +wp-buffer-length+)))
-    (fb-send-channel (attachment-protocol attachment) packet))
-  (let ((trans-handle (fb-op-response (attachment-protocol attachment))))
-    (values trans-handle)))
-
+  (let ((type
+	 (let ((usql (string-upcase sql)))
+	   (cond
+	     ((search "COMMIT" usql :test #'char=) :trans-end)
+	     ((and (search "ROLLBACK" usql :test #'char=)
+		   (not (search " TO " usql :test #'char=))) :trans-end) ; savepoint
+	     ((and
+	       (search "SET" usql :test #'char=)
+	       (search "TRANSACTION" usql :test #'char=))
+	      :trans-begin)
+	     (t :other)))))
+    (unless (eq type :trans-begin)
+      (check-transaction attachment))
+    (let (packet)
+      (setf packet
+	    (with-byte-stream (s)
+	      (xdr-int32 +op-exec-immediate+)
+	      (xdr-int32 (if (eq type :trans-begin)
+			     0
+			     (attachment-transaction attachment)))
+	      (xdr-int32 (object-handle attachment))
+	      (xdr-int32 3)		; dialect = 3
+	      (xdr-string sql)
+	      (xdr-octets #())
+	      (xdr-int32 +wp-buffer-length+)))
+      (fb-send-channel (attachment-protocol attachment) packet))
+    (let ((trans-handle (fb-op-response (attachment-protocol attachment))))
+      (case type
+	(:trans-begin
+	 (when (attachment-transaction attachment)
+	   (fbsql::fb-release-object
+	    attachment
+	    (attachment-transaction attachment)
+	    +op-rollback+))
+	 (setf (slot-value attachment 'trans) trans-handle))
+	(:trans-end (setf (slot-value attachment 'trans) nil))
+	(:other))
+      (values trans-handle))))
 
 
 
