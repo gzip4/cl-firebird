@@ -888,8 +888,30 @@
     (setf (slot-value attachment 'trans) nil)))
 
 
+(defun fb-op-info-sql (wp stmt-handle vars)
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-info-sql+)
+		  (xdr-int32 stmt-handle)
+		  (xdr-int32 0)
+		  (xdr-octets vars)
+		  (xdr-int32 +wp-buffer-length+))))
+    (fb-send-channel wp packet))
+  (values))
 
 
+(defun fb-row-count (wp handle &optional select-p)
+  (fb-op-info-sql wp handle (make-bytes +isc-info-sql-records+))
+  (multiple-value-bind (h oid buf)
+      (fb-op-response wp)
+    (declare (ignore h oid))
+    (assert (equalp (subseq buf 0 3) #(#x17 #x1d 0)))
+    (let ((count (if select-p
+		     (progn (assert (equalp (subseq buf 17 20) #(#x0d #x04 0)))
+			    (bytes-to-long-le (subseq buf 20 24)))
+		     (+ (bytes-to-long-le (subseq buf 27 31))
+			(bytes-to-long-le (subseq buf 6 10))
+			(bytes-to-long-le (subseq buf 13 17))))))
+      (values count))))
 
 
 (defun fb-parse-select-items/2 (buf xsqlda)
@@ -954,14 +976,8 @@
 	     (break "fb-parse-xsqlda") ; never been here, not tested
 	     (let* ((vars (make-bytes +isc-info-sql-sqlda-start+ 2
 				      (long-to-bytes-le next-index 2)
-				      +info-sql-select-describe-vars+))
-		    (packet (with-byte-stream (s)
-			      (xdr-int32 +op-info-sql+)
-			      (xdr-int32 handle)
-			      (xdr-int32 0)
-			      (xdr-octets vars)
-			      (xdr-int32 +wp-buffer-length+))))
-	       (fb-send-channel (attachment-protocol attachment) packet))
+				      +info-sql-select-describe-vars+)))
+	       (fb-op-info-sql (attachment-protocol attachment) handle vars))
 	     (multiple-value-bind (h oid buf)
 		 (fb-op-response (attachment-protocol attachment))
 	       (declare (ignore h oid))
@@ -1203,7 +1219,7 @@
       (prepare* attachment sql :explain-plan nil)
     (setf type (getf +stmt-type+ type :unknown))
     (setf params (%statement-convert-params params))
-    (let (packet result (op +op-execute+) h)
+    (let (packet result (op +op-execute+) h count)
       (when (eq type :exec-procedure)
 	(setf op +op-execute2+))
       (setf packet
@@ -1232,6 +1248,8 @@
       (when (eq type :exec-procedure)
 	(setf result (fb-op-sql-response (attachment-protocol attachment) xsqlda)))
       (setf h (fb-op-response (attachment-protocol attachment))) ; XXX: what is it?
+      (setf count (fb-row-count (attachment-protocol attachment) handle
+				(find type (list :select :select-for-upd))))
       (case type
 	((:select :select-for-upd)
 	 (setf result (make-instance 'cursor
@@ -1248,7 +1266,7 @@
 	 (setf (slot-value attachment 'trans) h)))
       (unless (find type (list :select :select-for-upd))
 	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+))
-      (values result type))))
+      (values result type count))))
 
 
 (defun cursor-close (cursor)
@@ -1290,6 +1308,23 @@
 		    :while ,row :do (progn ,@body)))
 	 (t ,c)))))
        
+
+(defun sql (attachment sql)
+  "Execute SQL immediate."
+  (check-transaction attachment)
+  (let (packet)
+    (setf packet
+	  (with-byte-stream (s)
+	    (xdr-int32 +op-exec-immediate+)
+	    (xdr-int32 (attachment-transaction attachment))
+	    (xdr-int32 (object-handle attachment))
+	    (xdr-int32 3)		; dialect = 3
+	    (xdr-string sql)
+	    (xdr-octets #())
+	    (xdr-int32 +wp-buffer-length+)))
+    (fb-send-channel (attachment-protocol attachment) packet))
+  (let ((trans-handle (fb-op-response (attachment-protocol attachment))))
+    (values trans-handle)))
 
 
 
