@@ -206,6 +206,7 @@
        (setf n (fb-recv-int32 wp)))	; end loop
     (values gds-codes sql-code message)))
 
+
 (defun fb-parse-op-response (wp)
   (let* ((b (fb-recv-channel wp 16))
 	 (h (bytes-to-long (subseq b 0 4)))
@@ -214,8 +215,6 @@
 	 (buf (fb-recv-channel wp buf-len t)))
     (multiple-value-bind (gds-codes sql-code message)
 	(fb-parse-status-vector wp)
-      ;;(print :status-vector)
-      ;;(print gds-codes) (print sql-code) (print message)
       (cond
 	((intersection gds-codes '(335544838 335544879 335544880 335544466 335544665 335544347 335544558))
 	 (error 'integrity-error :msg message :gds gds-codes :sql sql-code))
@@ -524,7 +523,7 @@
 	 plugin-name accept-version accept-type wp crypt-plugin crypt-key)
     (ecase plugin
       ((:srp :srp256)
-       (setf plugin-name (string plugin))
+       (setf plugin-name (string-capitalize (string plugin)))
        (multiple-value-bind (public-key private-key) (client-seed)
 	 (setf client-public-key public-key client-private-key private-key)
 	 (setf specific-data (long-to-hex public-key))))
@@ -752,7 +751,7 @@
       (error "InternalError: wp-op-response:op_code = ~a" op-code))
     (multiple-value-bind (h oid buf)
 	(fb-parse-op-response wp)
-      (log:debug h oid buf)
+      ;;(log:debug h oid buf)
       (values h oid buf))))
 
 
@@ -893,7 +892,7 @@
 
 
 
-(defun parse-select-items/2 (buf xsqlda)
+(defun fb-parse-select-items/2 (buf xsqlda)
   (let ((i 0) (index 0) (item (elt buf 0)))
     (flet ((get-item (&optional x)
 	     (let* ((l (bytes-to-long-le (subseq! buf (+ i 1) (+ i 3))))
@@ -935,7 +934,7 @@
 	   (setf item (elt buf i))))))) ; loop
 
 
-(defun parse-xsqlda (buf attachment handle)
+(defun fb-parse-xsqlda (buf attachment handle)
   (let (xsqlda stmt-type next-index l col-len (i 0) (buflen (length buf)))
     (loop
        (unless (< i buflen) (return))
@@ -949,10 +948,10 @@
 	  (incf i 2)
 	  (setf col-len (bytes-to-long-le (subseq! buf i (+ i l))))
 	  (setf xsqlda (make-list col-len))
-	  (setf next-index (parse-select-items/2 (subseq! buf (+ i l)) xsqlda))
+	  (setf next-index (fb-parse-select-items/2 (subseq! buf (+ i l)) xsqlda))
 	  (loop
 	     (unless (> next-index 0) (return))
-	     (break "xsqlvar-parse-xsqlda") ; never been here, not tested
+	     (break "fb-parse-xsqlda") ; never been here, not tested
 	     (let* ((vars (make-bytes +isc-info-sql-sqlda-start+ 2
 				      (long-to-bytes-le next-index 2)
 				      +info-sql-select-describe-vars+))
@@ -969,7 +968,7 @@
 	       (assert (equalp (subseq! buf 0 2) #(4 7)))
 	       (setf l (bytes-to-long-le (subseq! buf 2 4)))
 	       (assert (= (bytes-to-long-le (subseq! buf 4 (+ 4 l))) col-len))
-	       (setf next-index (parse-select-items/2 (subseq! buf (+ 4 l)) xsqlda)))))
+	       (setf next-index (fb-parse-select-items/2 (subseq! buf (+ 4 l)) xsqlda)))))
 	 (t (return))))
     (values stmt-type xsqlda)))
 
@@ -1022,7 +1021,7 @@
 	  (setf plan (bytes-to-str (subseq! buf (+ i 3) (+ i 3 l))))
 	  (incf i (+ 3 l)))
 	(multiple-value-bind (stmt-type xsqlda)
-	    (parse-xsqlda (subseq! buf i) attachment handle)
+	    (fb-parse-xsqlda (subseq! buf i) attachment handle)
 	  (values handle stmt-type xsqlda plan))))))
 
 
@@ -1178,7 +1177,7 @@
   (values))
 
 
-(defun wp-op-fetch-response (wp xsqlda)
+(defun fb-op-fetch-response (wp xsqlda)
   (finish-output (slot-value wp 'stream))
   (let (op-code)
     (setf op-code (fb-op-dummy wp))
@@ -1270,7 +1269,7 @@
 		     (xsqlvar-calc-blr (cursor-xsqlda cursor))
 		     1)			; count
 	(multiple-value-bind (rows more-data)
-	    (wp-op-fetch-response (cursor-protocol cursor) (cursor-xsqlda cursor))
+	    (fb-op-fetch-response (cursor-protocol cursor) (cursor-xsqlda cursor))
 	  (unless more-data (cursor-close cursor))
 	  (let ((r (car rows)))
 	    (when (and r plist)
