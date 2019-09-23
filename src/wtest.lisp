@@ -27,7 +27,7 @@
    (handle :initform nil :reader object-handle)
    (trans :initform nil :reader attachment-transaction)
    (auto-commit :initform nil :accessor attachment-auto-commit)
-   (isolation-level :initform :read-commited :accessor attachment-isolation-level)
+   (isolation-level :initform :read-committed :accessor attachment-isolation-level)
    ))
 (defclass cursor ()
   ((protocol :initarg :protocol :reader cursor-protocol)
@@ -56,7 +56,7 @@
   (= (wire-protocol-type wp) +ptype-lazy-send+))
 
 
-(defun socket-connect (host port)
+(defun fb-socket-connect (host port)
   #+sbcl
   (let* ((he (etypecase host
 	       (string (sb-bsd-sockets:get-host-by-name host))
@@ -672,7 +672,7 @@
   (check-type password string)
   (check-type port (integer 1 65535))
   (setf user (%convert-username (string user)))
-  (multiple-value-bind (stream socket) (socket-connect host port)
+  (multiple-value-bind (stream socket) (fb-socket-connect host port)
     (handler-bind ((error (lambda (e) (declare (ignore e))
 				  #+sbcl (sb-bsd-sockets:socket-close socket)
 				  #-sbcl (usocket:socket-close s))))
@@ -703,6 +703,7 @@
 	  (error 'operational-error :msg "Unauthorized."))
 	(assert (= op-code +op-response+))
 	(setf (slot-value a 'handle) (fb-parse-op-response wp))
+	(setf (slot-value wp 'auth-data) nil)
 
 	(values a)))))
 
