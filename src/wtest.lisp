@@ -910,22 +910,31 @@
     (rollback* attachment)))
 	   
 
-(defun fb-op-info-sql (wp stmt-handle vars)
-  (let ((packet (with-byte-stream (s)
-		  (xdr-int32 +op-info-sql+)
-		  (xdr-int32 stmt-handle)
-		  (xdr-int32 0)
-		  (xdr-octets vars)
-		  (xdr-int32 +wp-buffer-length+))))
-    (fb-send-channel wp packet))
-  (values))
-
-
-(defun fb-row-count (wp handle &optional select-p)
-  (fb-op-info-sql wp handle (make-bytes +isc-info-sql-records+))
+;; case op_info_blob:
+;; case op_info_database:
+;; case op_info_request:
+;; case op_info_transaction:
+;; case op_service_info:
+;; case op_info_sql:
+(defun fb-info-request (attachment operation object items &key incarnation)
+  (let (packet)
+    (setf packet
+	  (with-byte-stream (s)
+	    (xdr-int32 operation)
+	    (xdr-int32 object)
+	    (xdr-int32 (or incarnation 0))
+	    (xdr-octets items)
+	    (xdr-int32 +wp-buffer-length+)))
+    (fb-send-channel (attachment-protocol attachment) packet))
   (multiple-value-bind (h oid buf)
-      (fb-op-response wp)
+      (fb-op-response (attachment-protocol attachment))
     (declare (ignore h oid))
+    (values buf)))
+
+
+(defun fb-row-count (attachment handle &optional select-p)
+  (let ((buf (fb-info-request attachment +op-info-sql+ handle
+			      (make-bytes +isc-info-sql-records+))))
     (assert (equalp (subseq buf 0 3) #(#x17 #x1d 0)))
     (let ((count (if select-p
 		     (progn (assert (equalp (subseq buf 17 20) #(#x0d #x04 0)))
@@ -998,11 +1007,8 @@
 	     (break "fb-parse-xsqlda") ; never been here, not tested
 	     (let* ((vars (make-bytes +isc-info-sql-sqlda-start+ 2
 				      (long-to-bytes-le next-index 2)
-				      +info-sql-select-describe-vars+)))
-	       (fb-op-info-sql (attachment-protocol attachment) handle vars))
-	     (multiple-value-bind (h oid buf)
-		 (fb-op-response (attachment-protocol attachment))
-	       (declare (ignore h oid))
+				      +info-sql-select-describe-vars+))
+		    (buf (fb-info-request attachment +op-info-sql+ handle vars)))
 	       (assert (equalp (subseq! buf 0 2) #(4 7)))
 	       (setf l (bytes-to-long-le (subseq! buf 2 4)))
 	       (assert (= (bytes-to-long-le (subseq! buf 4 (+ 4 l))) col-len))
@@ -1149,7 +1155,6 @@
 
     (let ((blr (byte-stream-output blr))
 	  (vls (byte-stream-output vls)))
-      (log:trace "%params-to-blr: ~a ~a" blr vls)
       (values blr vls))))
 
 
@@ -1160,7 +1165,6 @@
        :do (let* ((io-len (xsqlvar-io-length x))
 		  (ln (if (< io-len 0) (fb-recv-int32 wp) io-len))
 		  (raw-value (fb-recv-channel wp ln t)))
-	     ;;(log:trace (xsqlvar-aliasname x) raw-value)
 	     (when (equalp #(0 0 0 0) (fb-recv-channel wp 4)) ; not NULL
 	       (setf (elt r i) (xsqlvar-value x raw-value)))))
     (values r)))
@@ -1185,7 +1189,6 @@
 	     (let* ((io-len (xsqlvar-io-length x))
 		  (ln (if (< io-len 0) (fb-recv-int32 wp) io-len))
 		  (raw-value (fb-recv-channel wp ln t)))
-	       ;;(log:trace (xsqlvar-aliasname x) raw-value)
 	       (setf (elt r i) (xsqlvar-value x raw-value)))))
     (values r)))
 
@@ -1197,7 +1200,7 @@
     (setf op-code (fb-op-lazy wp op-code))
     (unless (= op-code +op-sql-response+)
       (when (= op-code +op-response+)
-	(%parse-op-response wp))
+	(fb-parse-op-response wp))
       (error "op_sql_response: op-code = ~a" op-code))
     (unless (zerop (fb-recv-int32 wp))
       (fb-op-fetch-row wp xsqlda))))
@@ -1295,7 +1298,7 @@
 	 (setf (slot-value attachment 'trans) h)
 	 (setf result h))
 	(otherwise
-	 (setf count (fb-row-count (attachment-protocol attachment) handle nil))))
+	 (setf count (fb-row-count attachment handle nil))))
       (unless (find type (list :select :select-for-upd))
 	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+))
       (values result type count))))
@@ -1388,28 +1391,6 @@
 	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
 	 (res (apply #'query* attachment sql params)))
     (values res)))
-
-
-;; case op_info_blob:
-;; case op_info_database:
-;; case op_info_request:
-;; case op_info_transaction:
-;; case op_service_info:
-;; case op_info_sql:
-(defun fb-info-request (attachment operation object items &key incarnation)
-  (let (packet)
-    (setf packet
-	  (with-byte-stream (s)
-	    (xdr-int32 operation)
-	    (xdr-int32 object)
-	    (xdr-int32 (or incarnation 0))
-	    (xdr-octets items)
-	    (xdr-int32 +wp-buffer-length+)))
-    (fb-send-channel (attachment-protocol attachment) packet))
-  (multiple-value-bind (h oid buf)
-      (fb-op-response (attachment-protocol attachment))
-    (declare (ignore h oid))
-    (values buf)))
 
 
 (defun fb-parse-trans-info (buf ireq)
