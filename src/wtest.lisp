@@ -1380,3 +1380,54 @@
     (values res)))
 
 
+(defun fb-parse-trans-info (buf ireq)
+  (let ((buflen (length buf))
+	(i 0) (ir 0) req r l)
+    (loop
+       (unless (< i buflen) (return))
+       (setf req (elt buf i))
+       (when (= req +isc-info-end+) (return))
+       (assert (or (= req (elt ireq ir))
+		   (= req +isc-info-error+)))
+       (setf l (bytes-to-long-le (subseq! buf (1+ i) (+ i 3))))
+       (push (list req (elt ireq ir) (subseq! buf (+ i 3) (+ i 3 l))) r)
+       (incf i (+ 3 l))
+       (incf ir)) ; loop
+    (values r)))
+
+
+(defun fb-transaction-info (attachment info-requests)
+  (setf info-requests (check-info-requests info-requests))
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-info-transaction+)
+		  (xdr-int32 (attachment-transaction attachment))
+		  (xdr-int32 0)
+		  (xdr-octets info-requests)
+		  (xdr-int32 +wp-buffer-length+))))
+    (fb-send-channel (attachment-protocol attachment) packet))
+  (multiple-value-bind (h oid buf)
+      (fb-op-response (attachment-protocol attachment))
+    (declare (ignore h oid))
+    (let ((r (fb-parse-trans-info buf info-requests))
+	  (res nil))
+      (loop for (x y z) in r
+	 do (setf (getf res y)
+		  (cond
+		    ((= x +isc-info-tra-isolation+)
+		     (if (> (length z) 1)
+			 (cons (elt z 0) (elt z 1))
+			 (elt z 0)))
+		    ((= x +isc-info-error+) nil)
+		    (t (bytes-to-int-le z)))))
+      (values res))))
+
+
+(defun trans-info (attachment)
+  (check-transaction attachment)
+  (let ((info (fb-transaction-info attachment +my-isc-info-tra-all+)))
+    (loop :for i :from 0 :to (1- (length info)) :by 2
+       :do (setf (elt info i) (getf +my-isc-info-tra-map+ (elt info i))))
+    (values info)))
+
+
+
