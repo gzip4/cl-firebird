@@ -856,12 +856,14 @@
   (when (and auto-commit (not (find +isc-tpb-autocommit+ tpb)))
     (setf tpb (concatenate 'vector tpb #(#.+isc-tpb-autocommit+))))
   (when (attachment-transaction attachment)
-    (handler-case
-	(fb-release-object attachment (attachment-transaction attachment) +op-rollback+)
-      (operational-error (e)
-	;; invalid transaction handle
-	(when (member 335544332 (error-gds-codes e))
-	  :ignore)))
+    (block b1
+      (handler-bind
+	  ((operational-error
+	    (lambda (e)
+	      ;; invalid transaction handle
+	      (when (member 335544332 (error-gds-codes e))
+		(return-from b1)))))
+	(fb-release-object attachment (attachment-transaction attachment) +op-rollback+)))
     (setf (slot-value attachment 'trans) nil))
   (let ((packet
 	 (with-byte-stream (s)
@@ -1226,13 +1228,15 @@
 
 (defun query* (attachment sql &rest params)
   (multiple-value-bind (handle type xsqlda)
-      (handler-case
-	  (prepare* attachment sql :explain-plan nil)
-	(operational-error (e)
-	  ;; invalid transaction handle
-	  (when (member 335544332 (error-gds-codes e))
-	    (setf (slot-value attachment 'trans) nil)
-	    (prepare* attachment sql :explain-plan nil))))
+      (block b1
+	(handler-bind
+	    ((operational-error
+	      (lambda (e)
+		;; invalid transaction handle
+		(when (member 335544332 (error-gds-codes e))
+		  (setf (slot-value attachment 'trans) nil)
+		  (return-from b1 (prepare* attachment sql :explain-plan nil))))))
+	  (prepare* attachment sql :explain-plan nil)))
     (setf type (getf +stmt-type+ type :unknown))
     (setf params (%statement-convert-params params))
     (let (packet result (op +op-execute+) h (count 0))
@@ -1369,5 +1373,10 @@
       (values trans-handle))))
 
 
+(defun callproc* (attachment name &rest params)
+  (let* ((p? (make-list (length params) :initial-element #\?))
+	 (sql (format nil "EXECUTE PROCEDURE ~a ~{~a~^,~}" name p?))
+	 (res (apply #'query* attachment sql params)))
+    (values res)))
 
 
