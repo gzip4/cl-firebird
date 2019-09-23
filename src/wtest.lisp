@@ -757,34 +757,45 @@
 
 
 (defparameter +isolation-level+
-  (list :read-commited-legacy (vector
-			       +isc-tpb-version3+
-			       +isc-tpb-write+
-			       +isc-tpb-wait+
-			       +isc-tpb-read-committed+
-			       +isc-tpb-no-rec-version+)
-	:read-commited (vector
-			+isc-tpb-version3+
-			+isc-tpb-write+
-			+isc-tpb-wait+
-			+isc-tpb-read-committed+
-			+isc-tpb-rec-version+)
-	:repeatable-read (vector
-			  +isc-tpb-version3+
-			  +isc-tpb-write+
-			  +isc-tpb-wait+
-			  +isc-tpb-concurrency+)
-	:serializable (vector
-		       +isc-tpb-version3+
-		       +isc-tpb-write+
-		       +isc-tpb-wait+
-		       +isc-tpb-consistency+)
-	:read-commited-ro (vector
-			   +isc-tpb-version3+
-			   +isc-tpb-read+
-			   +isc-tpb-wait+
-			   +isc-tpb-read-committed+
-			   +isc-tpb-rec-version+)))
+  (list :read-commited-legacy
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-write+
+	 +isc-tpb-wait+
+	 +isc-tpb-read-committed+
+	 +isc-tpb-no-rec-version+)
+	:read-commited
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-write+
+	 +isc-tpb-wait+
+	 +isc-tpb-read-committed+
+	 +isc-tpb-rec-version+)
+	:repeatable-read
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-write+
+	 +isc-tpb-wait+
+	 +isc-tpb-concurrency+)
+	:snapshot			; same as :repeatable-read
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-write+
+	 +isc-tpb-wait+
+	 +isc-tpb-concurrency+)
+	:serializable
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-write+
+	 +isc-tpb-wait+
+	 +isc-tpb-consistency+)
+	:read-commited-ro
+	(vector
+	 +isc-tpb-version3+
+	 +isc-tpb-read+
+	 +isc-tpb-wait+
+	 +isc-tpb-read-committed+
+	 +isc-tpb-rec-version+)))
 
 
 (defparameter +tpb-map+
@@ -1409,14 +1420,16 @@
       (fb-op-response (attachment-protocol attachment))
     (declare (ignore h oid))
     (let ((r (fb-parse-trans-info buf info-requests))
-	  (res nil))
+	  (res nil)
+	  (tr-type (list 1 :snapshot-table-stability 2 :snapshot 3 :read-commited))
+	  (tr-subtype (list 0 :no-record-version 1 :record-version)))
       (loop for (x y z) in r
 	 do (setf (getf res y)
 		  (cond
 		    ((= x +isc-info-tra-isolation+)
 		     (if (> (length z) 1)
-			 (cons (elt z 0) (elt z 1))
-			 (elt z 0)))
+			 (cons (getf tr-type (elt z 0)) (getf tr-subtype (elt z 1)))
+			 (getf tr-type (elt z 0))))
 		    ((= x +isc-info-error+) nil)
 		    (t (bytes-to-int-le z)))))
       (values res))))
