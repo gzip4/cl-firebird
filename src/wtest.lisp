@@ -1457,4 +1457,26 @@
     (values info)))
 
 
+(defun fb-db-info (attachment info-requests)
+  (setf info-requests (check-info-requests info-requests))
+  (fb-info-request attachment +op-info-database+
+		   (object-handle attachment)
+		   info-requests)
+  (multiple-value-bind (h oid buf)
+      (fb-op-response (attachment-protocol attachment))
+    (declare (ignore h oid))
+    (let ((r nil))
+      (loop for (x y v) in (%parse-db-info buf info-requests)
+	 ;; make p-list
+	 do (push (if (/= x +isc-info-error+) (%db-info-convert-type y v)) r)
+	 do (push y r))
+      (values r))))
+
+
+(defun db-info* (attachment)
+  (let ((info (fb-db-info attachment +my-isc-info-all+)))
+    (loop :for i :from 0 :to (1- (length info)) :by 2
+       :do (setf (elt info i) (getf +my-isc-info-map+ (elt info i))))
+    (values info)))
+
 
