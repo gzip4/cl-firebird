@@ -1151,7 +1151,9 @@
 		   (xdr-int32 mode)))
     (if (wire-protocol-lazy-p wp)
 	(fb-send-channel wp packet nil)
-	(fb-op-response wp))))
+	(progn
+	  (fb-send-channel wp packet)
+	  (fb-op-response wp)))))
 
 
 (defun prepare* (attachment sql &key explain-plan)
