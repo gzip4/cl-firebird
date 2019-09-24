@@ -832,19 +832,19 @@
 	    params)))
 
 
-;; case op_commit:
-;; case op_prepare:
-;; case op_rollback:
-;; case op_unwind:
-;; case op_release:
-;; case op_close_blob:
-;; case op_cancel_blob:
-;; case op_detach:
-;; case op_drop_database:
-;; case op_service_detach:
-;; case op_commit_retaining:
-;; case op_rollback_retaining:
-;; case op_allocate_statement:
+;; +op-commit+
+;; +op-prepare+
+;; +op-rollback+
+;; +op-unwind+
+;; +op-release+
+;; +op-close-blob+
+;; +op-cancel-blob+
+;; +op-detach+
+;; +op-dr+op-database+
+;; +op-service-detach+
+;; +op-commit-retaining+
+;; +op-rollback-retaining+
+;; +op-allocate-statement+
 (defun fb-release-object (wp handle op)
   (declare (type (unsigned-byte 32) handle)
 	   (type (unsigned-byte 8) op))
@@ -991,8 +991,9 @@
 
 (defun fb-create-blob (attachment data &optional storage)
   (let ((bpb (make-bytes +isc-bpb-version1+
+			 +isc-bpb-type+
+			 +isc-bpb-type-segmented+
 			 +isc-bpb-storage+
-			 1		; ?
 			 (if storage
 			     +isc-bpb-storage-main+
 			     +isc-bpb-storage-temp+))))
@@ -1038,12 +1039,12 @@
   (fb-blob-contents attachment (blob-id blob)))
 
 
-;; case op_info_blob:
-;; case op_info_database:
-;; case op_info_request:
-;; case op_info_transaction:
-;; case op_service_info:
-;; case op_info_sql:
+;; +op-info-blob+
+;; +op-info-database+
+;; +op-info-request+
+;; +op-info-transaction+
+;; +op-service-info+
+;; +op-info-sql+
 (defun fb-info-request (attachment operation object items &key incarnation)
   (let (packet)
     (setf packet
@@ -1060,6 +1061,20 @@
     (values buf)))
 
 
+(defun blob-info (attachment blob)
+  (when (typep blob 'blob) (setf blob (blob-id blob)))
+  (let* ((h (fb-op-open-blob attachment blob))
+	 (items (make-bytes +isc-info-blob-num-segments+
+			    +isc-info-blob-max-segment+
+			    +isc-info-blob-total-length+
+			    +isc-info-blob-type+))
+	 (buf (fb-info-request attachment +op-info-blob+ h items)))
+    (fb-release-object (attachment-protocol attachment) h
+		       +op-close-blob+)
+    ;; XXX: parse buf
+    (values buf)))
+    
+  
 (defun fb-row-count (attachment handle &optional select-p)
   (let ((buf (fb-info-request attachment +op-info-sql+ handle
 			      (make-bytes +isc-info-sql-records+))))
@@ -1668,6 +1683,18 @@
   "Returns a list of all user-defined relations."
   (let ((c (query* attachment "SELECT RDB$RELATION_NAME FROM RDB$RELATIONS
 WHERE RDB$SYSTEM_FLAG = 0 ORDER BY 1")) result)
+    (loop
+       (multiple-value-bind (r more)
+	   (cursor-fetch-many c 200)
+	 (setf result (nconc result r))
+	 (unless more (return))))
+    (values result)))
+
+
+(defun list-all-procedures* (attachment)
+  "Returns a list of all PSQL procedures."
+  (let ((c (query* attachment "SELECT RDB$PROCEDURE_NAME
+FROM RDB$PROCEDURES ORDER BY 1")) result)
     (loop
        (multiple-value-bind (r more)
 	   (cursor-fetch-many c 200)
