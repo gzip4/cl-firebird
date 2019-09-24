@@ -898,18 +898,26 @@
 
 (defun commit* (attachment)
   (when (attachment-transaction attachment)
-    (fb-release-object (attachment-protocol attachment)
-		       (attachment-transaction attachment)
-		       +op-commit+)
-    (setf (slot-value attachment 'trans) nil)))
+    (let ((h (fb-release-object (attachment-protocol attachment)
+				(attachment-transaction attachment)
+				+op-commit+)))
+      (setf (slot-value attachment 'trans) nil)
+      (or (unless (zerop (wire-protocol-lazy-count (attachment-protocol attachment)))
+	    (decf (wire-protocol-lazy-count (attachment-protocol attachment)))
+	    (prog1 (fb-op-response (attachment-protocol attachment))))
+	  h))))
 
 
 (defun rollback* (attachment)
   (when (attachment-transaction attachment)
-    (fb-release-object (attachment-protocol attachment)
-		       (attachment-transaction attachment)
-		       +op-rollback+)
-    (setf (slot-value attachment 'trans) nil)))
+    (let ((h (fb-release-object (attachment-protocol attachment)
+				(attachment-transaction attachment)
+				+op-rollback+)))
+      (setf (slot-value attachment 'trans) nil)
+      (or (unless (zerop (wire-protocol-lazy-count (attachment-protocol attachment)))
+	    (decf (wire-protocol-lazy-count (attachment-protocol attachment)))
+	    (prog1 (fb-op-response (attachment-protocol attachment))))
+	  h))))
 
 
 (defmethod (setf attachment-isolation-level) :before (value (attachment attachment))
@@ -917,16 +925,15 @@
     (rollback* attachment)))
 	   
 
-#+nil
-(defun wp-op-open-blob (wp blob-id trans-handle)
-  (log:debug wp blob-id trans-handle)
+(defun fb-op-open-blob (attachment blob-id)
   (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-open-blob+)
-		  (xdr-int32 trans-handle)
+		  (xdr-int32 (attachment-transaction attachment))
 		  (write-sequence blob-id *xdr*))))
-    (log:trace packet)
-    (send-channel wp packet))
-  (values))
+    (fb-send-channel (attachment-protocol attachment) packet))
+  (multiple-value-bind (blob-handle)
+      (fb-op-response (attachment-protocol attachment))
+    (values blob-handle)))
 
 
 (defun fb-op-create-blob2 (attachment &optional bpb)
@@ -942,29 +949,26 @@
     (values blob-handle blob-id)))
 
 
-#+nil
-(defun wp-op-get-segment (wp blob-handle)
-  (log:debug wp blob-handle)
+(defun fb-op-get-segment (wp blob-handle)
   (let ((packet (with-byte-stream (s)
 		  (xdr-int32 +op-get-segment+)
 		  (xdr-int32 blob-handle)
 		  (xdr-int32 65535)
-		  (xdr-int32 0))))
-    (log:trace packet)
-    (send-channel wp packet))
-  (values))
+		  (xdr-octets #()))))
+    (fb-send-channel wp packet))
+  (multiple-value-bind (n oid buf)
+      (fb-op-response wp)
+    (declare (ignore oid))
+    (values n buf)))
 
 
 (defun fb-op-put-segment (wp blob-handle data)
   (let* ((ln (length data))
-	 (pad (pad-4-bytes ln))
 	 (packet (with-byte-stream (s)
-		  (xdr-int32 +op-put-segment+)
-		  (xdr-int32 blob-handle)
-		  (xdr-int32 ln)
-		  (xdr-int32 ln)
-		  (write-sequence data s)
-		  (write-sequence pad s))))
+		   (xdr-int32 +op-put-segment+)
+		   (xdr-int32 blob-handle)
+		   (xdr-int32 ln)
+		   (xdr-octets data))))
     (fb-send-channel wp packet))
   (fb-op-response wp))
 
@@ -992,6 +996,7 @@
 			 (if storage
 			     +isc-bpb-storage-main+
 			     +isc-bpb-storage-temp+))))
+    (check-transaction attachment)
     (multiple-value-bind (blob-handle blob-id)
 	(fb-op-create-blob2 attachment bpb)
       (loop :with i = 0 :with blen = (length data)
@@ -1007,6 +1012,26 @@
       (values blob-id))))
   
 
+(defun fb-blob-contents (attachment blob-id)
+  (let ((val (byte-stream)))
+    (loop
+       :with wp = (attachment-protocol attachment)
+       :with h = (fb-op-open-blob attachment blob-id)
+       :with n = 1
+       :while (/= n 2)
+       :do (multiple-value-bind (nn buf)
+	       (fb-op-get-segment wp h)
+	     (setf n nn)
+	     (loop
+		(when (zerop (length buf)) (return))
+		(let ((ln (bytes-to-long-le (subseq buf 0 2))))
+		  (append-bytes val (subseq! buf 2 (+ 2 ln)))
+		  (setf buf (subseq! buf (+ 2 ln))))))
+	 :finally
+	 (fb-release-object (attachment-protocol attachment)
+			    h
+			    +op-close-blob+))
+    (values (byte-stream-output val))))
 
 
 
