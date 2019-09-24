@@ -175,14 +175,14 @@
 	(n (fb-recv-int32 wp)))
     (loop
        (when (= n +isc-arg-end+) (return))
-       (cond
-	 ((= +isc-arg-gds+ n)
+       (case n
+	 (#.+isc-arg-gds+
 	  (setf gds-code (fb-recv-int32 wp))
 	  (unless (zerop gds-code)
 	    (pushnew gds-code gds-codes)
 	    (string+= message (gethash gds-code *messages* "@1"))
 	    (setf num-arg 0)))
-	 ((= +isc-arg-number+ n)
+	 (#.+isc-arg-number+
 	  (let ((num (fb-recv-int32 wp)))
 	    (when (= gds-code 335544436)
 	      (setf sql-code num))
@@ -190,20 +190,16 @@
 	    (let ((part (format nil "@~a" num-arg))
 		  (strnum (format nil "~a" num)))
 	      (setf message (replace-all message part strnum)))))
-	 ((= +isc-arg-string+ n)
-	  (let* ((nbytes (fb-recv-int32 wp))
-		 (s (bytes-to-str (fb-recv-channel wp nbytes t))))
+	 (#.+isc-arg-string+
+	  (let ((s (bytes-to-str (fb-recv-channel wp (fb-recv-int32 wp) t))))
 	    (incf num-arg)
-	    (let ((part (format nil "@~a" num-arg)))
-	      (setf message (replace-all message part s)))))
-	 ((= +isc-arg-interpreted+ n)
-	  (let* ((nbytes (fb-recv-int32 wp))
-		 (s (bytes-to-str (fb-recv-channel wp nbytes t))))
+	    (setf message (replace-all message (format nil "@~a" num-arg) s))))
+	 (#.+isc-arg-interpreted+
+	  (let ((s (bytes-to-str (fb-recv-channel wp (fb-recv-int32 wp) t))))
 	    (string+= message s)))
-	 ((= +isc-arg-sql-state+ n)
-	  (let ((nbytes (fb-recv-int32 wp)))
-	    (fb-recv-channel wp nbytes t)))) ; cond
-       (setf n (fb-recv-int32 wp)))	; end loop
+	 (#.+isc-arg-sql-state+
+	  (fb-recv-channel wp (fb-recv-int32 wp) t))) ; case
+       (setf n (fb-recv-int32 wp)))		      ; end loop
     (values gds-codes sql-code message)))
 
 
@@ -258,7 +254,7 @@
 			  (%pack-cnct-param +cnct-client-crypt+  (if crypt #(1 0 0 0) #(0 0 0 0))))
 		      (%pack-cnct-param +cnct-user+          (str-to-bytes "KZverev"))
 		      (%pack-cnct-param +cnct-host+          (str-to-bytes "LM-IT01G"))
-		      #+nil(%pack-cnct-param +cnct-user-verification+ #())))
+		      (%pack-cnct-param +cnct-user-verification+ #())))
     (setf packet
 	  (with-byte-stream (s)
 	    (xdr-int32 +op-connect+)
@@ -855,8 +851,22 @@
 	 (with-byte-stream (s)
 	   (xdr-int32 op)
 	   (xdr-int32 handle))))
+    (if (wire-protocol-lazy-p (attachment-protocol attachment))
+	(prog1 -1 (fb-send-channel (attachment-protocol attachment) packet nil))
+	(fb-op-response (attachment-protocol attachment)))))
+
+#+nil
+(defun fb-release-object/old (attachment handle op)
+  (declare (type (unsigned-byte 32) handle)
+	   (type (unsigned-byte 8) op))
+  (let ((packet
+	 (with-byte-stream (s)
+	   (xdr-int32 op)
+	   (xdr-int32 handle))))
     (fb-send-channel (attachment-protocol attachment) packet))
   (prog1 (fb-op-response (attachment-protocol attachment))))
+
+
 
 
 (defun set-transaction (attachment tpb &key auto-commit)
@@ -910,6 +920,97 @@
   (unless (eql (attachment-isolation-level attachment) value)
     (rollback* attachment)))
 	   
+
+#+nil
+(defun wp-op-open-blob (wp blob-id trans-handle)
+  (log:debug wp blob-id trans-handle)
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-open-blob+)
+		  (xdr-int32 trans-handle)
+		  (write-sequence blob-id *xdr*))))
+    (log:trace packet)
+    (send-channel wp packet))
+  (values))
+
+
+(defun fb-op-create-blob2 (attachment &optional bpb)
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-create-blob2+)
+		  (xdr-octets (or bpb #()))
+		  (xdr-int32 (attachment-transaction attachment))
+		  (xdr-int32 0)
+		  (xdr-int32 0))))
+    (fb-send-channel (attachment-protocol attachment) packet))
+  (multiple-value-bind (blob-handle blob-id)
+      (fb-op-response (attachment-protocol attachment))
+    (values blob-handle blob-id)))
+
+
+#+nil
+(defun wp-op-get-segment (wp blob-handle)
+  (log:debug wp blob-handle)
+  (let ((packet (with-byte-stream (s)
+		  (xdr-int32 +op-get-segment+)
+		  (xdr-int32 blob-handle)
+		  (xdr-int32 65535)
+		  (xdr-int32 0))))
+    (log:trace packet)
+    (send-channel wp packet))
+  (values))
+
+
+(defun fb-op-put-segment (wp blob-handle data)
+  (let* ((ln (length data))
+	 (pad (pad-4-bytes ln))
+	 (packet (with-byte-stream (s)
+		  (xdr-int32 +op-put-segment+)
+		  (xdr-int32 blob-handle)
+		  (xdr-int32 ln)
+		  (xdr-int32 ln)
+		  (write-sequence data s)
+		  (write-sequence pad s))))
+    (fb-send-channel wp packet))
+  (fb-op-response wp))
+
+
+(defun fb-op-batch-segments (wp blob-handle data)
+  (let* ((ln (length data))
+	 (ln2 (+ ln 2))
+	 (pad (pad-4-bytes ln2))
+	 (packet (with-byte-stream (s)
+		  (xdr-int32 +op-batch-segments+)
+		  (xdr-int32 blob-handle)
+		  (xdr-int32 ln2)
+		  (xdr-int32 ln2)
+		  (write-sequence (long-to-bytes ln 2) s)
+		  (write-sequence data s)
+		  (write-sequence pad s))))
+    (fb-send-channel wp packet))
+  (fb-op-response wp))
+
+
+(defun fb-create-blob (attachment data &optional storage)
+  (let ((bpb (make-bytes +isc-bpb-version1+
+			 +isc-bpb-storage+
+			 1		; ?
+			 (if storage
+			     +isc-bpb-storage-main+
+			     +isc-bpb-storage-temp+))))
+    (multiple-value-bind (blob-handle blob-id)
+	(fb-op-create-blob2 attachment bpb)
+      (loop :with i = 0 :with blen = (length data)
+	 :for j = (+ i *blob-segment-size*)
+	 :while (< i blen)
+	 :do (fb-op-put-segment (attachment-protocol attachment)
+				blob-handle
+				(subseq! data i (min j blen)))
+	 :do (incf i *blob-segment-size*))
+      (fb-release-object attachment blob-handle +op-close-blob+)
+      (values blob-id))))
+  
+
+
+
 
 ;; case op_info_blob:
 ;; case op_info_database:
@@ -1269,6 +1370,37 @@
       (values (nreverse rows) (/= status 100)))))
 
 
+(defun fb-execute (attachment handle xsqlda type params)
+  (let (packet result h (op +op-execute+))
+    (when (eq type :exec-procedure) (setf op +op-execute2+))
+    (setf packet
+	  (with-byte-stream (s)
+	    (xdr-int32 op)
+	    (xdr-int32 handle)
+	    (xdr-int32 (if (eq type :start-trans)
+			   0
+			   (attachment-transaction attachment)))
+	    (if (zerop (length params))
+		(progn
+		  (xdr-octets #())
+		  (xdr-int32 0)
+		  (xdr-int32 0))
+		(multiple-value-bind (blr vals)
+		    (fb-params-to-blr/2 (attachment-protocol attachment) params)
+		  (xdr-octets blr)
+		  (xdr-int32 0)
+		  (xdr-int32 1)
+		  (write-sequence vals s)))
+	    (when (eq type :exec-procedure)
+	      (xdr-octets (xsqlvar-calc-blr xsqlda))
+	      (xdr-int32 0))))
+    (fb-send-channel (attachment-protocol attachment) packet)
+    (when (eq type :exec-procedure)
+      (setf result (fb-op-sql-response (attachment-protocol attachment) xsqlda)))
+    (setf h (fb-op-response (attachment-protocol attachment))) ; XXX: what is it?
+    (values result h)))
+
+      
 (defun query* (attachment sql &rest params)
   (multiple-value-bind (handle type xsqlda)
       (block b1
@@ -1282,34 +1414,8 @@
 	  (prepare* attachment sql :explain-plan nil)))
     (setf type (getf +stmt-type+ type :unknown))
     (setf params (%statement-convert-params params))
-    (let (packet result (op +op-execute+) h (count 0))
-      (when (eq type :exec-procedure)
-	(setf op +op-execute2+))
-      (setf packet
-	    (with-byte-stream (s)
-	      (xdr-int32 op)
-	      (xdr-int32 handle)
-	      (xdr-int32 (if (eq type :start-trans)
-			     0
-			     (attachment-transaction attachment)))
-	      (if (zerop (length params))
-		  (progn
-		    (xdr-octets #())
-		    (xdr-int32 0)
-		    (xdr-int32 0))
-		  (multiple-value-bind (blr vals)
-		      (fb-params-to-blr/2 (attachment-protocol attachment) params)
-		    (xdr-octets blr)
-		    (xdr-int32 0)
-		    (xdr-int32 1)
-		    (write-sequence vals s)))
-	      (when (eq type :exec-procedure)
-		(xdr-octets (xsqlvar-calc-blr xsqlda))
-		(xdr-int32 0))))
-      (fb-send-channel (attachment-protocol attachment) packet)
-      (when (eq type :exec-procedure)
-	(setf result (fb-op-sql-response (attachment-protocol attachment) xsqlda)))
-      (setf h (fb-op-response (attachment-protocol attachment))) ; XXX: what is it?
+    (multiple-value-bind (result h)
+	(fb-execute attachment handle xsqlda type params)
       (case type
 	((:select :select-for-upd)
 	 (setf result (make-instance 'cursor
@@ -1320,17 +1426,16 @@
 	 (setf result t)
 	 (setf (slot-value attachment 'trans) nil))
 	(:start-trans
-	 (fbsql::fb-release-object
-	  attachment
-	  (attachment-transaction attachment)
-	  +op-rollback+)
+	 (fbsql::fb-release-object attachment
+				   (attachment-transaction attachment)
+				   +op-rollback+)
 	 (setf (slot-value attachment 'trans) h)
 	 (setf result h))
-	(otherwise
-	 (setf count (fb-row-count attachment handle nil))))
+	((:insert :update :delete)
+	 (setf result (fb-row-count attachment handle nil))))
       (unless (find type (list :select :select-for-upd))
 	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+))
-      (values result type count))))
+      (values result type))))
 
 
 (defun execute/many (attachment sql params-list)
