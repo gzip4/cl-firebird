@@ -36,6 +36,7 @@
 
 
 (defgeneric fb-params-to-blr/vls (wp params))
+(defgeneric fb-params-to-blr/null (wp vals is-null))
 (defgeneric fb-op-fetch-row (wp xsqlda))
 
 
@@ -1189,11 +1190,20 @@
     (make-bytes (nreverse null-indicator-bytes))))
 
 
-(defun fb-params-to-blr/2 (wp params)
+(defmethod fb-params-to-blr/null ((wp wire-protocol-10) vals is-null)
+  (append-bytes vals (if is-null #(255 255 255 255) #(0 0 0 0))))
+
+
+(defmethod fb-params-to-blr/null ((wp wire-protocol-13) vals is-null)
+  :do-nothing)
+
+
+(defun fb-params-to-blr/2 (attachment params)
   "Convert parameter array to BLR and values format."
   (let ((ln (* 2 (length params)))
 	(blr (byte-stream))
-	(vls (byte-stream)))
+	(vls (byte-stream))
+	(wp (attachment-protocol attachment)))
     (append-bytes blr 5 2 4 0 (ldb (byte 8 0) ln) (ldb (byte 8 8) ln))
     (append-bytes vls (fb-params-to-blr/vls wp params))
     (loop :for p :in params
@@ -1211,30 +1221,25 @@
 	      (let* ((s (str-to-bytes p))
 		     (slen (length s)))
 		(if (> slen +max-char-length+)
-		    (error "nicht blob")
-		    #+nil
-		    (progn (setf v (%create-blob wp trans-handle s))
+		    (progn (setf v (fb-create-blob attachment s))
 			   (append-bytes blr 9 0))
 		    (progn (setf v (make-bytes s (pad-4-bytes slen)))
 			   (append-bytes blr 14
 					 (ldb (byte 8 0) slen)
 					 (ldb (byte 8 8) slen))))))
 	     ((vectorp p)		; BLOB
-	      (error "nicht blob")
-	      #+nil(setf v (%create-blob wp trans-handle p))
-	      #+nil(append-bytes blr 9 0))
+	      (setf v (fb-create-blob attachment p))
+	      (append-bytes blr 9 0))
 	     ((typep p 'blob)		; BLOB
 	      (if (blob-id p)
 		  (setf v (blob-id p))
 		  (progn
-		    (error "nicht blob")
-		    #+nil(setf v (%create-blob wp trans-handle (blob-data p)))
-		    #+nil(setf (slot-value p 'blob-id) v)))
+		    (setf v (fb-create-blob attachment (blob-data p)))
+		    (setf (slot-value p 'blob-id) v)))
 	      (append-bytes blr 9 0))
 	     ((eq p nil) (setf v #(0 0 0 0)) (append-bytes blr 23))
 	     ((eq p t)   (setf v #(1 0 0 0)) (append-bytes blr 23))
 	     (t
-	      (log:trace "DEFAULT: string =>" p (type-of p))
 	      (let* ((s (str-to-bytes (str p)))
 		     (nbytes (length s)))
 		(setf v (make-bytes s (pad-4-bytes nbytes)))
@@ -1242,7 +1247,9 @@
 			      (ldb (byte 8 8) nbytes))))) ; cond
        :do (append-bytes blr 7 0) 
        :do (append-bytes vls v)
-       :do (when (< (wire-protocol-version wp) 13)
+       :do (fb-params-to-blr/null wp vls (eq p :null))
+	 #+nil
+	 (when (< (wire-protocol-version wp) 13)
 	     (append-bytes vls (if (eq p :null) #(255 255 255 255) #(0 0 0 0))))
        :finally (append-bytes blr 255 76)) ; loop
 
@@ -1377,7 +1384,7 @@
 		  (xdr-int32 0)
 		  (xdr-int32 0))
 		(multiple-value-bind (blr vals)
-		    (fb-params-to-blr/2 (attachment-protocol attachment) params)
+		    (fb-params-to-blr/2 attachment params)
 		  (xdr-octets blr)
 		  (xdr-int32 0)
 		  (xdr-int32 1)
@@ -1460,7 +1467,7 @@
 			       (xdr-int32 0)
 			       (xdr-int32 0))
 			     (multiple-value-bind (blr vals)
-				 (fb-params-to-blr/2 (attachment-protocol attachment) params)
+				 (fb-params-to-blr/2 attachment params)
 			       (xdr-octets blr)
 			       (xdr-int32 0)
 			       (xdr-int32 1)
