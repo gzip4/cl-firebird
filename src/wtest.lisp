@@ -1280,9 +1280,6 @@
        :do (append-bytes blr 7 0) 
        :do (append-bytes vls v)
        :do (fb-params-to-blr/null wp vls (eq p :null))
-	 #+nil
-	 (when (< (wire-protocol-version wp) 13)
-	     (append-bytes vls (if (eq p :null) #(255 255 255 255) #(0 0 0 0))))
        :finally (append-bytes blr 255 76)) ; loop
 
     (let ((blr (byte-stream-output blr))
@@ -1486,39 +1483,19 @@
 	    (prepare* attachment sql :explain-plan nil)))
       (setf type (getf +stmt-type+ type :unknown))
       (ecase type (:insert) (:update) (:delete) (:exec-procedure))
-      (let (packet result (op +op-execute+))
-	(loop :for params :in params-list
-	   :do (progn
-		 (setf params (%statement-convert-params params))
-		 (when (eq type :exec-procedure)
-		   (setf op +op-execute2+))
-		 (setf packet
-		       (with-byte-stream (s)
-			 (xdr-int32 op)
-			 (xdr-int32 handle)
-			 (xdr-int32 (attachment-transaction attachment))
-			 (if (zerop (length params))
-			     (progn
-			       (xdr-octets #())
-			       (xdr-int32 0)
-			       (xdr-int32 0))
-			     (multiple-value-bind (blr vals)
-				 (fb-params-to-blr/2 attachment params)
-			       (xdr-octets blr)
-			       (xdr-int32 0)
-			       (xdr-int32 1)
-			       (write-sequence vals s)))
-			 (when (eq type :exec-procedure)
-			   (xdr-octets (xsqlvar-calc-blr xsqlda))
-			   (xdr-int32 0))))
-		 (fb-send-channel (attachment-protocol attachment) packet)
-		 (when (eq type :exec-procedure)
-		   (push (fb-op-sql-response (attachment-protocol attachment) xsqlda) result))
-		 (fb-op-response (attachment-protocol attachment))
-		 (unless (eq type :exec-procedure)
-		   (push (fb-row-count attachment handle nil) result))))
-	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+)
-	(values result type)))))
+      (unwind-protect
+	   (let (result)
+	     (loop :for params :in params-list
+		:for p = (%statement-convert-params params)
+		:for r = (fb-execute attachment handle xsqlda type p)
+		:do (if (eql type :exec-procedure)
+			(push r result)
+			(push (fb-row-count attachment handle nil) result)))
+	     (values result type))
+	(ignore-errors
+	  (fb-op-free-statement (attachment-protocol attachment)
+				handle
+				+dsql-drop+))))))
 
 
 (defun cursor-close (cursor)
