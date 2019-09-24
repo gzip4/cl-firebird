@@ -748,7 +748,6 @@
       (error "InternalError: op-response:op_code = ~a" op-code))
     (multiple-value-bind (h oid buf)
 	(fb-parse-op-response wp)
-      ;;(log:debug h oid buf)
       (values h oid buf))))
 
 
@@ -990,48 +989,41 @@
 
 
 (defun fb-create-blob (attachment data &optional storage)
-  (let ((bpb (make-bytes +isc-bpb-version1+
-			 +isc-bpb-type+
-			 +isc-bpb-type-segmented+
-			 +isc-bpb-storage+
-			 (if storage
-			     +isc-bpb-storage-main+
-			     +isc-bpb-storage-temp+))))
-    (check-transaction attachment)
-    (multiple-value-bind (blob-handle blob-id)
-	(fb-op-create-blob2 attachment bpb)
-      (loop :with i = 0 :with blen = (length data)
-	 :for j = (+ i *blob-segment-size*)
-	 :while (< i blen)
-	 :do (fb-op-put-segment (attachment-protocol attachment)
-				blob-handle
-				(subseq! data i (min j blen)))
-	 :do (incf i *blob-segment-size*))
-      (fb-release-object (attachment-protocol attachment)
-			 blob-handle
-			 +op-close-blob+)
-      (values blob-id))))
+  (let ((bpb (make-bytes
+	      +isc-bpb-version1+
+	      +isc-bpb-type+ +isc-bpb-type-segmented+
+	      +isc-bpb-storage+ (if storage
+				    +isc-bpb-storage-main+
+				    +isc-bpb-storage-temp+)))
+	(wp (attachment-protocol attachment)))
+    (flet ((put-data (blob-handle blob-id)
+	     (loop :with i = 0 :with blen = (length data)
+		:for j = (+ i *blob-segment-size*)
+		:while (< i blen)
+		:do (fb-op-put-segment wp blob-handle (subseq! data i (min j blen)))
+		:do (incf i *blob-segment-size*))
+	     (values blob-id)))
+      (check-transaction attachment)
+      (multiple-value-bind (blob-handle blob-id)
+	  (fb-op-create-blob2 attachment bpb)
+	(unwind-protect
+	     (put-data blob-handle blob-id)
+	  (fb-release-object wp blob-handle +op-close-blob+))))))
   
 
 (defun fb-blob-contents (attachment blob-id)
-  (let ((val (byte-stream)))
-    (loop
-       :with wp = (attachment-protocol attachment)
-       :with h = (fb-op-open-blob attachment blob-id)
-       :with n = 1
-       :while (/= n 2)
-       :do (multiple-value-bind (nn buf)
-	       (fb-op-get-segment wp h)
-	     (setf n nn)
-	     (loop
-		(when (zerop (length buf)) (return))
-		(let ((ln (bytes-to-long-le (subseq buf 0 2))))
-		  (append-bytes val (subseq! buf 2 (+ 2 ln)))
-		  (setf buf (subseq! buf (+ 2 ln))))))
-	 :finally
-	 (fb-release-object (attachment-protocol attachment)
-			    h
-			    +op-close-blob+))
+  (check-transaction attachment)
+  (let ((val (byte-stream))
+	(wp (attachment-protocol attachment))
+	(h (fb-op-open-blob attachment blob-id)))
+    (unwind-protect
+	 (loop (multiple-value-bind (n buf) (fb-op-get-segment wp h)
+		 (loop (when (zerop (length buf)) (return))
+		    (let ((ln (bytes-to-long-le (subseq buf 0 2))))
+		      (append-bytes val (subseq! buf 2 (+ 2 ln)))
+		      (setf buf (subseq! buf (+ 2 ln)))))
+		 (when (= n 2) (return))))
+      (fb-release-object wp h +op-close-blob+))
     (values (byte-stream-output val))))
 
 
