@@ -844,29 +844,16 @@
 ;; case op_commit_retaining:
 ;; case op_rollback_retaining:
 ;; case op_allocate_statement:
-(defun fb-release-object (attachment handle op)
+(defun fb-release-object (wp handle op)
   (declare (type (unsigned-byte 32) handle)
 	   (type (unsigned-byte 8) op))
   (let ((packet
 	 (with-byte-stream (s)
 	   (xdr-int32 op)
 	   (xdr-int32 handle))))
-    (if (wire-protocol-lazy-p (attachment-protocol attachment))
-	(prog1 -1 (fb-send-channel (attachment-protocol attachment) packet nil))
-	(fb-op-response (attachment-protocol attachment)))))
-
-#+nil
-(defun fb-release-object/old (attachment handle op)
-  (declare (type (unsigned-byte 32) handle)
-	   (type (unsigned-byte 8) op))
-  (let ((packet
-	 (with-byte-stream (s)
-	   (xdr-int32 op)
-	   (xdr-int32 handle))))
-    (fb-send-channel (attachment-protocol attachment) packet))
-  (prog1 (fb-op-response (attachment-protocol attachment))))
-
-
+    (if (wire-protocol-lazy-p wp)
+	(prog1 -1 (fb-send-channel wp packet nil))
+	(fb-op-response wp))))
 
 
 (defun set-transaction (attachment tpb &key auto-commit)
@@ -884,7 +871,9 @@
 	      ;; invalid transaction handle
 	      (when (member 335544332 (error-gds-codes e))
 		(return-from b1)))))
-	(fb-release-object attachment (attachment-transaction attachment) +op-rollback+)))
+	(fb-release-object (attachment-protocol attachment)
+			   (attachment-transaction attachment)
+			   +op-rollback+)))
     (setf (slot-value attachment 'trans) nil))
   (let ((packet
 	 (with-byte-stream (s)
@@ -906,13 +895,17 @@
 
 (defun commit* (attachment)
   (when (attachment-transaction attachment)
-    (fb-release-object attachment (attachment-transaction attachment) +op-commit+)
+    (fb-release-object (attachment-protocol attachment)
+		       (attachment-transaction attachment)
+		       +op-commit+)
     (setf (slot-value attachment 'trans) nil)))
 
 
 (defun rollback* (attachment)
   (when (attachment-transaction attachment)
-    (fb-release-object attachment (attachment-transaction attachment) +op-rollback+)
+    (fb-release-object (attachment-protocol attachment)
+		       (attachment-transaction attachment)
+		       +op-rollback+)
     (setf (slot-value attachment 'trans) nil)))
 
 
@@ -1005,7 +998,9 @@
 				blob-handle
 				(subseq! data i (min j blen)))
 	 :do (incf i *blob-segment-size*))
-      (fb-release-object attachment blob-handle +op-close-blob+)
+      (fb-release-object (attachment-protocol attachment)
+			 blob-handle
+			 +op-close-blob+)
       (values blob-id))))
   
 
@@ -1426,7 +1421,7 @@
 	 (setf result t)
 	 (setf (slot-value attachment 'trans) nil))
 	(:start-trans
-	 (fbsql::fb-release-object attachment
+	 (fbsql::fb-release-object (attachment-protocol attachment)
 				   (attachment-transaction attachment)
 				   +op-rollback+)
 	 (setf (slot-value attachment 'trans) h)
@@ -1569,10 +1564,9 @@
       (case type
 	(:trans-begin
 	 (when (attachment-transaction attachment)
-	   (fbsql::fb-release-object
-	    attachment
-	    (attachment-transaction attachment)
-	    +op-rollback+))
+	   (fbsql::fb-release-object (attachment-protocol attachment)
+				     (attachment-transaction attachment)
+				     +op-rollback+))
 	 (setf (slot-value attachment 'trans) trans-handle))
 	(:trans-end (setf (slot-value attachment 'trans) nil))
 	(:other))
