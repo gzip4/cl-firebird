@@ -1034,6 +1034,9 @@
     (values (byte-stream-output val))))
 
 
+(defun blob-contents (attachment blob)
+  (fb-blob-contents attachment (blob-id blob)))
+
 
 ;; case op_info_blob:
 ;; case op_info_database:
@@ -1441,28 +1444,32 @@
 	  (prepare* attachment sql :explain-plan nil)))
     (setf type (getf +stmt-type+ type :unknown))
     (setf params (%statement-convert-params params))
-    (multiple-value-bind (result h)
-	(fb-execute attachment handle xsqlda type params)
-      (case type
-	((:select :select-for-upd)
-	 (setf result (make-instance 'cursor
-				     :protocol (attachment-protocol attachment)
-				     :handle handle
-				     :xsqlda xsqlda)))
-	((:commit :rollback)
-	 (setf result t)
-	 (setf (slot-value attachment 'trans) nil))
-	(:start-trans
-	 (fbsql::fb-release-object (attachment-protocol attachment)
-				   (attachment-transaction attachment)
-				   +op-rollback+)
-	 (setf (slot-value attachment 'trans) h)
-	 (setf result h))
-	((:insert :update :delete)
-	 (setf result (fb-row-count attachment handle nil))))
+    (unwind-protect
+	 (multiple-value-bind (result h)
+	     (fb-execute attachment handle xsqlda type params)
+	   (case type
+	     ((:select :select-for-upd)
+	      (setf result (make-instance 'cursor
+					  :protocol (attachment-protocol attachment)
+					  :handle handle
+					  :xsqlda xsqlda)))
+	     ((:commit :rollback)
+	      (setf result t)
+	      (setf (slot-value attachment 'trans) nil))
+	     (:start-trans
+	      (fbsql::fb-release-object (attachment-protocol attachment)
+					(attachment-transaction attachment)
+					+op-rollback+)
+	      (setf (slot-value attachment 'trans) h)
+	      (setf result h))
+	     ((:insert :update :delete)
+	      (setf result (fb-row-count attachment handle nil))))
+	   (values result type))
       (unless (find type (list :select :select-for-upd))
-	(fb-op-free-statement (attachment-protocol attachment) handle +dsql-drop+))
-      (values result type))))
+	(ignore-errors
+	  (fb-op-free-statement (attachment-protocol attachment)
+				handle
+				+dsql-drop+))))))
 
 
 (defun execute/many (attachment sql params-list)
@@ -1559,13 +1566,16 @@
 	    (,s ,sql)
 	    (,c (query* ,a ,s ,@params)))
        (typecase ,c
-	 (cursor (loop :for ,row = (cursor-fetch-row ,c)
-		    :while ,row :do (progn ,@body)))
+	 (cursor
+	  (unwind-protect
+	       (loop :for ,row = (cursor-fetch-row ,c)
+		  :while ,row :do (progn ,@body))
+	    (cursor-close ,c)))
 	 (t ,c)))))
        
 
-(defun sql (attachment sql)
-  "Execute SQL immediate."
+(defun execute* (attachment sql)
+  "Execute SQL immediately (non-selective)."
   (let ((type
 	 (let ((usql (string-upcase sql)))
 	   (cond
