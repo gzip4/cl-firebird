@@ -1129,14 +1129,10 @@
 (defun prepare* (attachment sql &key explain-plan)
   (check-transaction attachment)
   (let (handle plan packet desc-items)
-    (setf packet
-	  (with-byte-stream (s)
-	    (xdr-int32 +op-allocate-statement+)
-	    (xdr-int32 (object-handle attachment))))
-    (setf handle
-	  (if (wire-protocol-lazy-p (attachment-protocol attachment))
-	      (prog1 -1 (fb-send-channel (attachment-protocol attachment) packet nil))
-	      (fb-op-response (attachment-protocol attachment))))
+    (setf handle			; `allocate' with `release'
+	  (fb-release-object (attachment-protocol attachment)
+			     (object-handle attachment)
+			     +op-allocate-statement+))
     (setf desc-items
 	  (make-bytes (if explain-plan +isc-info-sql-get-plan+)
 		      +isc-info-sql-stmt-type+
