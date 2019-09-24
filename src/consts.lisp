@@ -163,6 +163,12 @@
 (defconstant +isc-info-req-update-count+ 15)
 (defconstant +isc-info-req-delete-count+ 16)
 
+(defconstant +isc-info-blob-num-segments+ 4)
+(defconstant +isc-info-blob-max-segment+  5)
+(defconstant +isc-info-blob-total-length+ 6)
+(defconstant +isc-info-blob-type+         7)
+
+
 (defconstant +isc-info-svc-svr-db-info+ 50)
 (defconstant +isc-info-svc-get-license+ 51)
 (defconstant +isc-info-svc-get-license-mask+ 52)
@@ -376,6 +382,7 @@
 (defconstant +op-close-blob+ 39)
 (defconstant +op-info-database+ 40)
 (defconstant +op-info-transaction+ 42)
+(defconstant +op-info-blob+ 43)
 (defconstant +op-batch-segments+ 44)
 (defconstant +op-que-events+ 48)
 (defconstant +op-cancel-events+ 49)
