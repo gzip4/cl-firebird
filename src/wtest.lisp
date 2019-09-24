@@ -854,7 +854,9 @@
 	   (xdr-int32 handle))))
     (if (wire-protocol-lazy-p wp)
 	(prog1 -1 (fb-send-channel wp packet nil))
-	(fb-op-response wp))))
+	(progn
+	  (fb-send-channel wp packet)
+	  (fb-op-response wp)))))
 
 
 (defun set-transaction (attachment tpb &key auto-commit)
