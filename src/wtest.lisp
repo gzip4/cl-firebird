@@ -1052,6 +1052,13 @@ Keys supported:
     (values buf)))
 
 
+(defparameter +isc-info-blob-map+
+  (list +isc-info-blob-num-segments+ :num-segments
+	+isc-info-blob-max-segment+  :max-segment
+	+isc-info-blob-total-length+ :total-length
+	+isc-info-blob-type+         :type))
+
+
 (defun blob-info (attachment blob)
   (when (typep blob 'blob) (setf blob (blob-id blob)))
   (check-transaction attachment)
@@ -1063,8 +1070,15 @@ Keys supported:
 	 (buf (fb-info-request attachment +op-info-blob+ h items)))
     (fb-release-object (attachment-protocol attachment) h
 		       +op-close-blob+)
-    ;; XXX: parse buf
-    (values buf)))
+    (let (res)
+      (loop
+	 (let ((p (aref buf 0)))
+	   (when (= p 1) (return))
+	   (let* ((len (+ (aref buf 1) (* 256 (aref buf 2))))
+		  (v (bytes-to-long-le (subseq! buf 3 (+ 3 len)))))
+	     (setf res (nconc res (list (getf +isc-info-blob-map+ p) v)))
+	     (setf buf (subseq! buf (+ len 3))))))
+      (values res))))
     
   
 (defun fb-row-count (attachment handle &optional select-p)
