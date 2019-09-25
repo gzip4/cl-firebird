@@ -27,8 +27,7 @@
    (handle :initform nil :reader object-handle)
    (trans :initform nil :reader attachment-transaction)
    (auto-commit :initform nil :accessor attachment-auto-commit)
-   (isolation-level :initform :read-committed :accessor attachment-isolation-level)
-   ))
+   (isolation-level :initform :read-committed :accessor attachment-isolation-level)))
 (defclass cursor ()
   ((protocol :initarg :protocol :reader cursor-protocol)
    (handle :initform nil :initarg :handle :reader object-handle)
@@ -205,11 +204,9 @@
 
 
 (defun fb-parse-op-response (wp)
-  (let* ((b (fb-recv-channel wp 16))
-	 (h (bytes-to-long (subseq b 0 4)))
-	 (oid (subseq b 4 12))
-	 (buf-len (bytes-to-long (subseq b 12)))
-	 (buf (fb-recv-channel wp buf-len t)))
+  (let* ((h (fb-recv-int32 wp))
+	 (oid (fb-recv-channel wp 8))
+	 (buf (fb-recv-channel wp (fb-recv-int32 wp) t)))
     (multiple-value-bind (gds-codes sql-code message)
 	(fb-parse-status-vector wp)
       (cond
