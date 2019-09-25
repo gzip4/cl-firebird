@@ -661,6 +661,10 @@
 
 
 (defun attach (database host user password &rest args &key (port 3050) &allow-other-keys)
+  "Attach to a `database' at `host' with `user' and `password'.
+Keys supported:
+`role' (default none), `charset' (default none), `version' (default 3.0),
+`plugin' (default :srp256), `crypt' (default T) "
   (check-type database string)
   (check-type password string)
   (check-type port (integer 1 65535))
