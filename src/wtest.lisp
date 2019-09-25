@@ -819,16 +819,20 @@
    :lock-timeout     +isc-tpb-lock-timeout+))
 
 
+;; example:
+;; (set-transaction *a* (gen-tpb :concurrency :write :nowait :lock-write "T1" :protected))
 (defun gen-tpb (&rest params)
-  ;; XXX: need more work
   (with-byte-stream (s)
     (write-byte +isc-tpb-version3+ s)
-    (mapcar (lambda (p)
-	      (let ((pp (getf +tpb-map+ p)))
-		(if pp
-		    (write-byte pp s)
-		    (error "Unknown TPB parameter: ~a" p))))
-	    params)))
+    (loop :for p :in params
+       :do (etypecase p
+	     (string
+	      (let ((b (str-to-bytes p)))
+		(write-byte (length b) s)
+		(write-sequence b s)))
+	     (symbol
+	      (write-byte (or (getf +tpb-map+ p)
+			      (error "Unknown TPB parameter: ~a" p)) s))))))
 
 
 ;; +op-commit+
@@ -1055,6 +1059,7 @@
 
 (defun blob-info (attachment blob)
   (when (typep blob 'blob) (setf blob (blob-id blob)))
+  (check-transaction attachment)
   (let* ((h (fb-op-open-blob attachment blob))
 	 (items (make-bytes +isc-info-blob-num-segments+
 			    +isc-info-blob-max-segment+
