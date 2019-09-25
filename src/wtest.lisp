@@ -1073,11 +1073,16 @@ Keys supported:
     (let (res)
       (loop
 	 (let ((p (aref buf 0)))
-	   (when (= p 1) (return))
-	   (let* ((len (+ (aref buf 1) (* 256 (aref buf 2))))
-		  (v (bytes-to-long-le (subseq! buf 3 (+ 3 len)))))
-	     (setf res (nconc res (list (getf +isc-info-blob-map+ p) v)))
-	     (setf buf (subseq! buf (+ len 3))))))
+	   (case p
+	     (#.+isc-info-end+ (return))
+	     (#.+isc-info-truncated+ (return)) ; ?
+	     (#.+isc-info-error+
+	      (setf buf (subseq! buf 1)))
+	     (otherwise
+	      (let* ((len (+ (aref buf 1) (* 256 (aref buf 2))))
+		     (v (bytes-to-long-le (subseq! buf 3 (+ 3 len)))))
+		(setf res (nconc res (list (getf +isc-info-blob-map+ p) v)))
+		(setf buf (subseq! buf (+ len 3))))))))
       (values res))))
     
   
