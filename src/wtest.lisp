@@ -16,8 +16,7 @@
    (bytes-out :initform 0 :reader wire-protocol-bytes-out)
    (start-time :initform (get-universal-time) :reader wire-protocol-start-time)
    (auth-data :initform nil :reader wire-protocol-auth-data)
-   (version :initform nil :initarg :version :reader wire-protocol-version)
-   ))
+   (version :initform nil :initarg :version :reader wire-protocol-version)))
 (defclass wire-protocol-10 (wire-protocol-base) () (:default-initargs :version 10))
 (defclass wire-protocol-11 (wire-protocol-10)   () (:default-initargs :version 11))
 (defclass wire-protocol-12 (wire-protocol-11)   () (:default-initargs :version 12))
@@ -1289,7 +1288,6 @@ Keys supported:
        :do (append-bytes vls v)
        :do (fb-params-to-blr/null wp vls (eq p :null))
        :finally (append-bytes blr 255 76)) ; loop
-
     (let ((blr (byte-stream-output blr))
 	  (vls (byte-stream-output vls)))
       (values blr vls))))
@@ -1619,7 +1617,7 @@ Keys supported:
        (setf l (bytes-to-long-le (subseq! buf (1+ i) (+ i 3))))
        (push (list req (elt ireq ir) (subseq! buf (+ i 3) (+ i 3 l))) r)
        (incf i (+ 3 l))
-       (incf ir)) ; loop
+       (incf ir))			; loop
     (values r)))
 
 
