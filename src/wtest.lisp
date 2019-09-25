@@ -555,10 +555,9 @@
     (setf op-code (nibbles:read-sb32/be stream)) ; XXX: count bytes-in
     (when (= op-code +op-reject+)
       (error 'operational-error :msg "Connection is rejected"))
-    ;; XXX: (= op-code +op-response+) => (fb-parse-op-response wp)
-    ;;      but no wp instance yet
     (when (= op-code +op-response+)
-      (error 'operational-error :msg "Connection needs response"))
+      (fb-parse-op-response (make-instance 'wire-protocol-10 :stream stream)) ; error
+      (error 'operational-error :msg "Connection response")) ; not reached
     (setf accept-version (ldb (byte 8 0) (nibbles:read-sb32/be stream)))
     (nibbles:read-sb32/be stream)	; accept-architecture
     (setf accept-type (nibbles:read-sb32/be stream))
