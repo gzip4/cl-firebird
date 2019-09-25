@@ -737,19 +737,15 @@ Keys supported:
 
 
 (defun fb-op-response (wp)
-  (log:debug wp)
   (finish-output (slot-value wp 'stream))
-  (let (op-code)
-    (setf op-code (fb-op-dummy wp))
-    (setf op-code (fb-op-lazy wp op-code))
+  (let ((op-code (fb-op-lazy wp (fb-op-dummy wp))))
     (when (= op-code +op-cont-auth+)
-      (error 'operational-error :msg "Unauthorized"))
+      (error 'operational-error :msg "Unauthorized."))
     (when (/= op-code +op-response+)
       (error "InternalError: op-response:op_code = ~a" op-code))
     (multiple-value-bind (h oid buf)
 	(fb-parse-op-response wp)
       (values h oid buf))))
-
 
 
 (defparameter +isolation-level+
