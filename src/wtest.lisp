@@ -857,6 +857,15 @@ Keys supported:
 	  (fb-op-response wp)))))
 
 
+(defmacro with-object ((var handle wp operation) &body body)
+  (let ((wp! (gensym "WP")) (op (gensym "OP")))
+    `(let ((,var ,handle)
+	   (,wp! ,wp)
+	   (,op ,operation))
+       (unwind-protect (progn ,@body)
+	 (fb-release-object ,wp! ,var ,op)))))
+
+
 (defun set-transaction (attachment tpb &key auto-commit)
   (when (typep tpb 'symbol)
     (let ((v (getf +isolation-level+ tpb)))
@@ -1005,29 +1014,23 @@ Keys supported:
       (check-transaction attachment)
       (multiple-value-bind (blob-handle blob-id)
 	  (fb-op-create-blob2 attachment bpb)
-	(unwind-protect
-	     (put-data blob-handle blob-id)
-	  (fb-release-object wp blob-handle +op-close-blob+))))))
+	(with-object (h blob-handle wp +op-close-blob+)
+	  (put-data h blob-id))))))
   
 
-(defun fb-blob-contents (attachment blob-id)
+(defun fb-blob-contents (attachment blob)
   (check-transaction attachment)
+  (when (typep blob 'blob) (setf blob (blob-id blob)))
   (let ((val (byte-stream))
-	(wp (attachment-protocol attachment))
-	(h (fb-op-open-blob attachment blob-id)))
-    (unwind-protect
-	 (loop (multiple-value-bind (n buf) (fb-op-get-segment wp h)
-		 (loop (when (zerop (length buf)) (return))
-		    (let ((ln (bytes-to-long-le (subseq buf 0 2))))
-		      (append-bytes val (subseq! buf 2 (+ 2 ln)))
-		      (setf buf (subseq! buf (+ 2 ln)))))
-		 (when (= n 2) (return))))
-      (fb-release-object wp h +op-close-blob+))
+	(wp (attachment-protocol attachment)))
+    (with-object (h (fb-op-open-blob attachment blob) wp +op-close-blob+)
+      (loop (multiple-value-bind (n buf) (fb-op-get-segment wp h)
+	      (loop (when (zerop (length buf)) (return))
+		 (let ((ln (bytes-to-long-le (subseq buf 0 2))))
+		   (append-bytes val (subseq! buf 2 (+ 2 ln)))
+		   (setf buf (subseq! buf (+ 2 ln)))))
+	      (when (= n 2) (return)))))
     (values (byte-stream-output val))))
-
-
-(defun blob-contents (attachment blob)
-  (fb-blob-contents attachment (blob-id blob)))
 
 
 ;; +op-info-blob+
@@ -1059,36 +1062,34 @@ Keys supported:
 	+isc-info-blob-type+         :type))
 
 
-(defun blob-info (attachment blob)
+(defun fb-blob-info (attachment blob)
   (when (typep blob 'blob) (setf blob (blob-id blob)))
   (check-transaction attachment)
-  (let* ((h (fb-op-open-blob attachment blob))
-	 (items (make-bytes +isc-info-blob-num-segments+
-			    +isc-info-blob-max-segment+
-			    +isc-info-blob-total-length+
-			    +isc-info-blob-type+))
-	 (buf (fb-info-request attachment +op-info-blob+ h items)))
-    (fb-release-object (attachment-protocol attachment) h
-		       +op-close-blob+)
-    (let (res)
-      (loop
-	 (let ((p (aref buf 0)))
-	   (case p
+  (let ((items #(#.+isc-info-blob-num-segments+ #.+isc-info-blob-max-segment+
+		 #.+isc-info-blob-total-length+ #.+isc-info-blob-type+
+		 #.+isc-info-end+))
+	(wp (attachment-protocol attachment))
+	buf res)
+    (with-object (h (fb-op-open-blob attachment blob) wp +op-close-blob+)
+      (setf buf (fb-info-request attachment +op-info-blob+ h items)))
+    (loop
+       :for p = (aref buf 0)
+       :do (case p
 	     (#.+isc-info-end+ (return))
 	     (#.+isc-info-truncated+ (return)) ; ?
 	     (#.+isc-info-error+
 	      (setf buf (subseq! buf 1)))
 	     (otherwise
-	      (let* ((len (+ (aref buf 1) (* 256 (aref buf 2))))
+	      (let* ((len (+ (aref buf 1) (ash (aref buf 2) 8)))
 		     (v (bytes-to-long-le (subseq! buf 3 (+ 3 len)))))
 		(setf res (nconc res (list (getf +isc-info-blob-map+ p) v)))
-		(setf buf (subseq! buf (+ len 3))))))))
-      (values res))))
+		(setf buf (subseq! buf (+ len 3)))))))
+    (values res)))
     
   
 (defun fb-row-count (attachment handle &optional select-p)
   (let ((buf (fb-info-request attachment +op-info-sql+ handle
-			      (make-bytes +isc-info-sql-records+))))
+			      #(#.+isc-info-sql-records+))))
     (assert (equalp (subseq buf 0 3) #(#x17 #x1d 0)))
     (let ((count (if select-p
 		     (progn (assert (equalp (subseq buf 17 20) #(#x0d #x04 0)))
@@ -1477,7 +1478,8 @@ Keys supported:
 					  :xsqlda xsqlda)))
 	     ((:commit :rollback)
 	      (setf result t)
-	      (setf (slot-value attachment 'trans) nil))
+	      (setf (slot-value attachment 'trans)
+		    (if (zerop h) nil h))) ; may be retain
 	     (:start-trans
 	      (fbsql::fb-release-object (attachment-protocol attachment)
 					(attachment-transaction attachment)
@@ -1532,6 +1534,17 @@ Keys supported:
 	t)
       nil))
   
+
+(defun cursor-fetch-one (cursor)
+  (if (object-handle cursor)
+      (let ((rows (fb-fetch (cursor-protocol cursor)
+		    (object-handle cursor)
+		    (cursor-xsqlda cursor)
+		    1)))
+	(cursor-close cursor)
+	(values (car rows)))
+      (error 'operational-error :msg "Cursor is closed.")))
+
 
 (defun cursor-fetch-row (cursor &key plist)
   (if (object-handle cursor)
@@ -1612,7 +1625,9 @@ Keys supported:
 				     (attachment-transaction attachment)
 				     +op-rollback+))
 	 (setf (slot-value attachment 'trans) trans-handle))
-	(:trans-end (setf (slot-value attachment 'trans) nil))
+	(:trans-end
+	 (setf (slot-value attachment 'trans) ; may be retain
+	       (if (zerop trans-handle) nil trans-handle)))
 	(:other))
       (values trans-handle))))
 
@@ -1649,15 +1664,17 @@ Keys supported:
 	 (res nil)
 	 (tr-type (list 1 :snapshot-table-stability 2 :snapshot 3 :read-committed))
 	 (tr-subtype (list 0 :no-record-version 1 :record-version)))
-    (loop for (x y z) in r
-       do (setf (getf res y)
-		(cond
-		  ((= x +isc-info-tra-isolation+)
+    (loop
+       :for (x y z) in r
+       :for v = (case x
+		  (#.+isc-info-tra-isolation+
 		   (if (> (length z) 1)
-		       (cons (getf tr-type (elt z 0)) (getf tr-subtype (elt z 1)))
+		       (cons (getf tr-type (elt z 0))
+			     (getf tr-subtype (elt z 1)))
 		       (getf tr-type (elt z 0))))
-		  ((= x +isc-info-error+) nil)
-		  (t (bytes-to-int-le z)))))
+		  (#.+isc-info-error+ nil)
+		  (otherwise (bytes-to-int-le z)))
+       :do (setf (getf res y) v))
     (values res)))
 
 
