@@ -101,3 +101,4 @@ STRING contains any character whose CHAR-CODE is greater than 255."
                      :format-arguments (list (char string i))))
             (setf (aref vec i) byte))
           finally (return vec))))
+
